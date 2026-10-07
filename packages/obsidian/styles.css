@@ -299,31 +299,6 @@
 	min-width: 24em;
 }
 
-/* ---------- Selection bar (mobile) ---------- */
-.epp-selection-bar {
-	display: none;
-	position: absolute;
-	/* top: Obsidian mobile's floating navbar covers the bottom edge */
-	left: 50%;
-	top: var(--size-4-2);
-	transform: translateX(-50%);
-	z-index: var(--layer-popover);
-	gap: var(--size-4-1);
-	padding: var(--size-4-1);
-	background: var(--background-primary);
-	border: var(--border-width) solid var(--background-modifier-border);
-	border-radius: var(--radius-l);
-	box-shadow: var(--shadow-l);
-}
-.epp-selection-bar.is-visible {
-	display: flex;
-}
-.epp-selection-bar .clickable-icon {
-	gap: 6px;
-	padding: 6px 10px;
-	font-size: var(--font-ui-small);
-}
-
 /* ---------- Mobile layout / narrow panes: sidebar becomes a drawer ---------- */
 .epp-mobile .epp-toolbar {
 	padding: 2px var(--size-4-1);
@@ -425,4 +400,55 @@
 .epp-embed-host {
 	position: relative;
 	width: 100%;
+}
+
+/* ---------- Floating search navigation ---------- */
+.epp-search-float {
+	display: none;
+	position: absolute;
+	top: var(--size-4-2);
+	right: calc(var(--size-4-4) + 4px);
+	z-index: 5;
+	flex-direction: column;
+	gap: 2px;
+	padding: 2px;
+	background: var(--background-primary);
+	border: var(--border-width) solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	box-shadow: var(--shadow-s);
+}
+.epp-search-float.is-visible {
+	display: flex;
+}
+.epp-mobile .epp-search-float .clickable-icon {
+	padding: var(--size-4-2);
+}
+
+/* ---------- Mobile drawer spacing ---------- */
+body.epp-drawer-open .mobile-navbar {
+	display: none;
+}
+.epp-mobile .epp-sidebar-tabs {
+	padding: var(--size-4-2) var(--size-4-4);
+	gap: var(--size-4-2);
+}
+.epp-mobile .epp-panel {
+	padding: var(--size-4-3) var(--size-4-4) calc(var(--size-4-6) + env(safe-area-inset-bottom, 0px));
+}
+.epp-mobile .epp-toc-self {
+	padding-block: 7px;
+}
+.epp-mobile .epp-search-result {
+	padding: 8px var(--size-4-2);
+}
+.epp-mobile .epp-search-toggles {
+	margin: var(--size-4-3) 0;
+}
+.epp-mobile .epp-sidebar-open .epp-search-float {
+	display: none;
+}
+@container epp-view (max-width: 640px) {
+	.epp-sidebar-open .epp-search-float {
+		display: none;
+	}
 }

@@ -50,7 +50,9 @@ export interface Location {
 }
 
 export interface SearchResult extends SearchMatch {
+	/** Live range (created on demand; prefer `staticRange()` for painting many results). */
 	range(): Range;
+	staticRange(): StaticRange;
 	cfi(): string;
 	tocItem(): TocItem | null;
 }
@@ -137,6 +139,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 	private readonly spineFilter: Set<number> | null;
 	/** Reading position to restore when the host is re-attached or resized (DOM moves reset scrollTop). */
 	private anchor: Range | null = null;
+	private scratchRange: Range | null = null;
 	private anchorPosition: 'top' | 'center' = 'top';
 	private hostSize = { w: 0, h: 0 };
 	private lastHover: string = '';
@@ -574,7 +577,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 	}
 
 	/** Deepest TOC entry at or before the given position. */
-	tocItemAt(range: Range): TocItem | null {
+	tocItemAt(range: AbstractRange): TocItem | null {
 		if (!this.tocTargets) {
 			const targets: { item: TocItem; node: Node }[] = [];
 			for (const item of flattenToc(this.book.toc)) {
@@ -585,9 +588,12 @@ export class EpubReader extends Emitter<ReaderEvents> {
 			targets.sort((x, y) => (x.node === y.node ? 0 : x.node.compareDocumentPosition(y.node) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
 			this.tocTargets = targets;
 		}
+		const point = (this.scratchRange ??= this.doc.createRange());
+		point.setStart(range.startContainer, range.startOffset);
+		point.collapse(true);
 		let best: TocItem | null = null;
 		for (const t of this.tocTargets) {
-			if (range.comparePoint(t.node, 0) <= 0) best = t.item;
+			if (point.comparePoint(t.node, 0) <= 0) best = t.item;
 			else break;
 		}
 		return best;
@@ -599,17 +605,34 @@ export class EpubReader extends Emitter<ReaderEvents> {
 
 	getSelectionRange(): Range | null {
 		const sel: Selection | null = (this.shadow as any).getSelection?.() ?? this.doc.getSelection();
-		if (!sel || sel.rangeCount === 0) return null;
-		let range: Range | null = null;
-		const composed = (sel as any).getComposedRanges?.({ shadowRoots: [this.shadow] }) ?? (sel as any).getComposedRanges?.(this.shadow);
-		if (composed?.length) {
-			const sr = composed[0] as StaticRange;
-			range = this.doc.createRange();
-			range.setStart(sr.startContainer, sr.startOffset);
-			range.setEnd(sr.endContainer, sr.endOffset);
-		} else range = sel.getRangeAt(0);
-		if (!range || range.collapsed || !this.content.contains(range.commonAncestorContainer)) return null;
-		return range;
+		if (!sel) return null;
+		// Selections inside shadow roots: Chromium has shadowRoot.getSelection(); WebKit/Gecko use
+		// getComposedRanges, whose signature changed ({shadowRoots: [...]} vs. spread roots), so try both
+		// and fall back to the plain range. Use the first candidate that lies inside the book.
+		const candidates: AbstractRange[] = [];
+		const getComposed = (sel as any).getComposedRanges as ((...a: unknown[]) => StaticRange[]) | undefined;
+		if (getComposed) {
+			for (const args of [[{ shadowRoots: [this.shadow] }], [this.shadow]]) {
+				try {
+					const ranges = getComposed.apply(sel, args);
+					if (ranges?.length) {
+						candidates.push(ranges[0]);
+						break;
+					}
+				} catch {
+					/* other signature */
+				}
+			}
+		}
+		if (sel.rangeCount) candidates.push(sel.getRangeAt(0));
+		for (const r of candidates) {
+			if (r.collapsed || !this.content.contains(r.startContainer) || !this.content.contains(r.endContainer)) continue;
+			const range = this.doc.createRange();
+			range.setStart(r.startContainer, r.startOffset);
+			range.setEnd(r.endContainer, r.endOffset);
+			return range;
+		}
+		return null;
 	}
 
 	describeRange(range: Range): SelectionInfo | null {
@@ -739,12 +762,15 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		const index = this.textIndex;
 		return searchIndex(index, query, opts).map((m) => {
 			let range: Range | null = null;
+			let staticRange: StaticRange | null = null;
 			const getRange = () => (range ??= index.toRange(m.start, m.end));
+			const getStatic = () => (staticRange ??= index.toStaticRange(m.start, m.end));
 			return {
 				...m,
 				range: getRange,
+				staticRange: getStatic,
 				cfi: () => this.cfiFromRange(getRange()) ?? '',
-				tocItem: () => this.tocItemAt(getRange()),
+				tocItem: () => this.tocItemAt(getStatic()),
 			};
 		});
 	}
@@ -759,10 +785,11 @@ export class EpubReader extends Emitter<ReaderEvents> {
 			this.registry!.delete(cur);
 			return;
 		}
-		this.registry!.set(all, new this.HighlightCtor!(...results.map((r) => r.range())));
+		// Static ranges: thousands of live Ranges would slow down every DOM mutation in the window.
+		this.registry!.set(all, new this.HighlightCtor!(...results.map((r) => r.staticRange())));
 		const c = results[current];
 		if (c) {
-			this.registry!.set(cur, new this.HighlightCtor!(c.range()));
+			this.registry!.set(cur, new this.HighlightCtor!(c.staticRange()));
 			this.scrollToRange(c.range(), { flash: false, position: 'center' });
 		} else this.registry!.delete(cur);
 	}

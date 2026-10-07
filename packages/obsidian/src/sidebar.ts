@@ -49,14 +49,19 @@ export class Sidebar {
 			t.button.toggleClass('is-active', k === id);
 			t.panel.toggleClass('is-active', k === id);
 		}
+		this.view.setSearchNavVisible(id === 'search' && this.results.length > 0);
 		if (id !== 'search') this.view.reader?.showSearchResults([]);
-		else if (this.results.length) this.view.reader?.showSearchResults(this.results, -1);
+		else {
+			if (this.results.length) this.view.reader?.showSearchResults(this.results, -1);
+			this.warmIndex();
+		}
 	}
 
 	setBook(book: EpubBook | null): void {
 		this.tocEl.empty();
 		this.tocItems.clear();
 		this.results = [];
+		this.view.setSearchNavVisible(false);
 		this.resultsEl?.empty();
 		this.searchInfo?.setText('');
 		if (!book) return;
@@ -130,10 +135,20 @@ export class Sidebar {
 		setIcon(next, 'chevron-down');
 		next.addEventListener('click', () => this.step(1));
 		this.resultsEl = panel.createDiv('epp-search-results');
+		this.resultsEl.addEventListener(
+			'scroll',
+			() => {
+				const el = this.resultsEl;
+				if (this.renderedCount < this.results.length && el.scrollTop + el.clientHeight > el.scrollHeight - 400) this.renderMoreResults(100);
+			},
+			{ passive: true },
+		);
 
+		// Live search waits for 2+ characters (Enter searches anything); longer pause on mobile.
 		const run = debounce(() => {
-			if (this.searchInput.value !== this.lastQuery) this.runSearch();
-		}, 250, true);
+			const q = this.searchInput.value;
+			if (q !== this.lastQuery && (q.trim().length >= 2 || !q.trim())) this.runSearch();
+		}, Platform.isMobile ? 450 : 250, true);
 		this.searchInput.addEventListener('input', run);
 		this.searchInput.addEventListener('keydown', (e) => {
 			if (e.key === 'Enter') {
@@ -148,6 +163,16 @@ export class Sidebar {
 	}
 
 	private lastQuery = '';
+
+	/** Build the text index in the background so the first keystroke doesn't stall (slow phones). */
+	private warmIndex(): void {
+		const reader = this.view.reader;
+		if (!reader) return;
+		const idle = (window as any).requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 50));
+		idle(() => {
+			if (this.view.reader === reader) void reader.textIndex.folded;
+		});
+	}
 
 	focusSearch(query?: string): void {
 		if (query) {
@@ -166,6 +191,7 @@ export class Sidebar {
 		this.current = -1;
 		if (!reader || !q.trim()) {
 			this.results = [];
+			this.view.setSearchNavVisible(false);
 			this.searchInfo.setText('');
 			reader?.showSearchResults([]);
 			return;
@@ -173,27 +199,39 @@ export class Sidebar {
 		this.results = reader.search(q, { ...this.opts, limit: 2000 });
 		this.searchInfo.setText(this.results.length >= 2000 ? '2000+ results' : `${this.results.length} result${this.results.length === 1 ? '' : 's'}`);
 		reader.showSearchResults(this.results, -1);
+		this.view.setSearchNavVisible(this.results.length > 0);
 
-		// Group by chapter
-		let lastSpine = -1;
-		const max = Math.min(this.results.length, 500);
-		for (let i = 0; i < max; i++) {
+		this.renderedCount = 0;
+		this.lastGroupSpine = -1;
+		this.renderMoreResults(100);
+	}
+
+	private renderedCount = 0;
+	private lastGroupSpine = -1;
+
+	/** Results are appended in batches (on scroll) so huge result sets stay cheap to lay out. */
+	private renderMoreResults(n: number): void {
+		const end = Math.min(this.results.length, this.renderedCount + n);
+		const frag = document.createDocumentFragment();
+		for (let i = this.renderedCount; i < end; i++) {
 			const r = this.results[i];
-			if (r.spineIndex !== lastSpine) {
-				lastSpine = r.spineIndex;
-				this.resultsEl.createDiv({ cls: 'epp-search-group', text: r.tocItem()?.label ?? `Section ${r.spineIndex + 1}` });
+			if (r.spineIndex !== this.lastGroupSpine) {
+				this.lastGroupSpine = r.spineIndex;
+				frag.createDiv({ cls: 'epp-search-group', text: r.tocItem()?.label ?? `Section ${r.spineIndex + 1}` });
 			}
-			const el = this.resultsEl.createDiv('epp-search-result');
+			const el = frag.createDiv('epp-search-result');
 			el.dataset.index = String(i);
 			el.createSpan({ text: r.excerpt.before });
 			el.createEl('mark', { cls: 'epp-search-match', text: r.excerpt.match });
 			el.createSpan({ text: r.excerpt.after });
 			el.addEventListener('click', () => this.select(i, true));
+			if (i === this.current) el.addClass('is-active');
 		}
-		if (this.results.length > max) this.resultsEl.createDiv({ cls: 'epp-empty', text: `Showing first ${max} results. Refine your search to see more.` });
+		this.renderedCount = end;
+		this.resultsEl.appendChild(frag);
 	}
 
-	private step(delta: number): void {
+	step(delta: number): void {
 		if (!this.results.length) return;
 		const n = this.results.length;
 		this.select(this.current === -1 ? (delta > 0 ? 0 : n - 1) : (this.current + delta + n) % n);
@@ -204,6 +242,7 @@ export class Sidebar {
 		this.current = i;
 		this.view.reader?.showSearchResults(this.results, i);
 		this.searchInfo.setText(`${i + 1} / ${this.results.length}`);
+		if (i >= this.renderedCount) this.renderMoreResults(i - this.renderedCount + 50);
 		this.resultsEl.querySelector('.is-active')?.removeClass('is-active');
 		const el = this.resultsEl.querySelector(`[data-index="${i}"]`) as HTMLElement | null;
 		el?.addClass('is-active');

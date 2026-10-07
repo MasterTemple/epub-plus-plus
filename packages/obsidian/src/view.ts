@@ -17,8 +17,8 @@ export class EpubView extends FileView {
 	private chapterEl!: HTMLElement;
 	private progressEl!: HTMLElement;
 	private paletteEl!: HTMLElement;
-	private selectionBar!: HTMLElement;
 	private sidebar!: Sidebar;
+	private searchNavEl!: HTMLElement;
 	private appearance!: AppearancePanel;
 	private pendingSubpath: string | null = null;
 	private loadToken = 0;
@@ -76,8 +76,15 @@ export class EpubView extends FileView {
 		this.sidebar = new Sidebar(this, this.mainEl.createDiv('epp-sidebar'));
 		this.mainEl.createDiv('epp-sidebar-backdrop').addEventListener('click', () => this.toggleSidebar(false));
 		this.hostEl = this.mainEl.createDiv('epp-reader-host');
+		this.searchNavEl = this.mainEl.createDiv('epp-search-float');
+		const navButton = (icon: string, label: string, delta: number) => {
+			const b = this.searchNavEl.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': label } });
+			setIcon(b, icon);
+			b.addEventListener('click', () => this.sidebar.step(delta));
+		};
+		navButton('chevron-up', 'Previous result', -1);
+		navButton('chevron-down', 'Next result', 1);
 		this.appearance = new AppearancePanel(this.plugin, this.mainEl.createDiv('epp-appearance'));
-		this.selectionBar = this.mainEl.createDiv('epp-selection-bar');
 		this.toggleSidebar(!Platform.isMobile && this.plugin.settings.sidebarOpen, false);
 
 		this.offIndex = (() => {
@@ -94,13 +101,20 @@ export class EpubView extends FileView {
 				if (this.file && this.reader) this.onLoadFile(this.file);
 			}),
 		);
+		this.guardTouchGestures();
 		// Ctrl/Cmd+C (and the system Copy command) inside the book uses the configured copy action.
 		this.registerDomEvent(this.contentEl, 'copy', (e: ClipboardEvent) => this.onCopy(e));
 	}
 
 	override async onOpen(): Promise<void> {}
 
+	/** Floating previous/next buttons over the book while there are search results. */
+	setSearchNavVisible(visible: boolean): void {
+		this.searchNavEl?.toggleClass('is-visible', visible); // the sidebar is built before the nav buttons
+	}
+
 	override async onClose(): Promise<void> {
+		this.contentEl.doc.body.removeClass('epp-drawer-open');
 		this.offIndex?.();
 		this.teardown();
 	}
@@ -169,7 +183,6 @@ export class EpubView extends FileView {
 		this.book = null;
 		this.sidebar?.setBook(null);
 		this.hostEl?.empty();
-		this.selectionBar?.removeClass('is-visible');
 	}
 
 	// --------------------------------------------------------------------------------------------
@@ -248,7 +261,7 @@ export class EpubView extends FileView {
 			if (highlights.length) this.addHighlightItems(menu, highlights.map((h) => h.data as HighlightEntry));
 			menu.showAtMouseEvent(e);
 		});
-		reader.on('selectionchange', (sel) => this.updateSelectionBar(sel));
+		reader.on('selectionchange', (sel) => this.scheduleSelectionMenu(sel));
 	}
 
 	/** Paragraph under the pointer, so right-click works without an explicit selection. */
@@ -272,6 +285,43 @@ export class EpubView extends FileView {
 		const specs: HighlightSpec<HighlightEntry>[] = entries.map((e) => ({ id: e.id, locator: e.locator, color: e.color, data: e }));
 		this.reader.setHighlights(specs);
 		this.sidebar.setHighlights(all);
+	}
+
+	/**
+	 * Obsidian mobile opens the pull-down action (command palette) on a downward swipe when the view
+	 * looks scrolled to the top. Our scroller lives in a shadow root, so it always looks that way.
+	 * Keep vertical swipes inside the reader unless it really is at the top.
+	 */
+	private guardTouchGestures(): void {
+		let x0 = 0;
+		let y0 = 0;
+		let vertical: boolean | null = null;
+		const start = (e: TouchEvent) => {
+			this.touching = true;
+			x0 = e.touches[0]?.clientX ?? 0;
+			y0 = e.touches[0]?.clientY ?? 0;
+			vertical = null;
+		};
+		const move = (e: TouchEvent) => {
+			const t = e.touches[0];
+			if (!t || !this.reader) return;
+			const dx = t.clientX - x0;
+			const dy = t.clientY - y0;
+			if (vertical === null && Math.abs(dx) + Math.abs(dy) > 6) vertical = Math.abs(dy) > Math.abs(dx);
+			// Horizontal swipes still reach Obsidian (sidebar gestures).
+			if (vertical && this.reader.scroller.scrollTop > 0) e.stopPropagation();
+		};
+		const end = (e: TouchEvent) => {
+			if (e.touches.length === 0) {
+				this.touching = false;
+				this.scheduleSelectionMenu(this.reader?.getSelection() ?? null);
+			}
+			if (vertical && this.reader && this.reader.scroller.scrollTop > 0) e.stopPropagation();
+		};
+		this.registerDomEvent(this.hostEl, 'touchstart', start, { passive: true });
+		this.registerDomEvent(this.hostEl, 'touchmove', move, { passive: true });
+		this.registerDomEvent(this.hostEl, 'touchend', end, { passive: true });
+		this.registerDomEvent(this.hostEl, 'touchcancel', end, { passive: true });
 	}
 
 	private onCopy(e: ClipboardEvent): void {
@@ -400,30 +450,50 @@ export class EpubView extends FileView {
 	// Selection bar (mobile: there is no right-click)
 	// --------------------------------------------------------------------------------------------
 
-	private updateSelectionBar(sel: SelectionInfo | null): void {
-		const bar = this.selectionBar;
-		if (!Platform.isMobile || !this.plugin.settings.selectionBar || !sel) {
-			bar.removeClass('is-visible');
+	private selectionMenuTimer = 0;
+	/** CFI of the selection the menu was last shown for (don't re-open it for the same selection). */
+	private lastMenuCfi: string | null = null;
+	private touching = false;
+
+	/** Mobile has no right-click: open EPUB++'s menu once a selection settles (not while touching). */
+	private scheduleSelectionMenu(sel: SelectionInfo | null): void {
+		window.clearTimeout(this.selectionMenuTimer);
+		if (!Platform.isMobile || !this.plugin.settings.selectionBar) return;
+		if (!sel) {
+			this.lastMenuCfi = null;
 			return;
 		}
-		bar.empty();
-		const btn = (icon: string, label: string, fn: () => void) => {
-			const b = bar.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': label } });
-			setIcon(b, icon);
-			b.createSpan({ text: label });
-			b.addEventListener('pointerdown', (e) => e.preventDefault()); // keep the selection
-			b.addEventListener('click', fn);
-		};
-		btn('link', 'Link', () => this.plugin.copy(this, sel, 'link', this.activeColor));
-		const callout = this.plugin.settings.copyFormats[0];
-		if (callout) btn('quote', callout.name, () => this.plugin.copy(this, sel, callout, this.activeColor));
-		btn('more-horizontal', 'More', () => {
-			const menu = new Menu();
-			this.addSelectionItems(menu, sel);
-			const r = bar.getBoundingClientRect();
-			menu.showAtPosition({ x: r.left, y: r.top });
-		});
-		bar.addClass('is-visible');
+		this.selectionMenuTimer = window.setTimeout(() => {
+			if (this.touching) return; // touchend reschedules
+			const cur = this.reader?.getSelection();
+			if (!cur || cur.cfi === this.lastMenuCfi) return;
+			this.lastMenuCfi = cur.cfi;
+			this.showSelectionMenu(cur);
+		}, 600);
+	}
+
+	private showSelectionMenu(info: SelectionInfo): void {
+		const menu = new Menu();
+		this.addSelectionItems(menu, info);
+		menu.addItem((i) =>
+			i
+				.setTitle('System menu')
+				.setIcon('smartphone')
+				.setSection('epp-system')
+				.onClick(() => this.showNativeSelectionMenu(info.range)),
+		);
+		const r = info.range.getBoundingClientRect();
+		menu.showAtPosition({ x: r.left + r.width / 2, y: r.bottom + 8 });
+	}
+
+	/** Re-apply the selection after our menu closes so the OS shows its own selection toolbar again. */
+	private showNativeSelectionMenu(range: Range): void {
+		window.setTimeout(() => {
+			const sel = range.startContainer.ownerDocument?.getSelection();
+			if (!sel) return;
+			sel.removeAllRanges();
+			sel.addRange(range);
+		}, 150);
 	}
 
 	// --------------------------------------------------------------------------------------------
@@ -434,6 +504,8 @@ export class EpubView extends FileView {
 		const isOpen = this.mainEl.hasClass('epp-sidebar-open');
 		const next = open ?? !isOpen;
 		this.mainEl.toggleClass('epp-sidebar-open', next);
+		// Obsidian's mobile navbar overlaps the drawer's bottom; hide it while the drawer is open.
+		this.contentEl.doc.body.toggleClass('epp-drawer-open', next && this.sidebarIsOverlay());
 		if (persist && !Platform.isMobile && open === undefined) {
 			this.plugin.settings.sidebarOpen = next;
 			this.plugin.saveSettings();

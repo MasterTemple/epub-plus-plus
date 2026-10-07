@@ -49,7 +49,7 @@ export interface EppSettings {
 	/** Where the source note opens when clicking a highlight. */
 	openNoteIn: OpenTarget;
 	sidebarOpen: boolean;
-	/** Mobile: show a floating copy bar while text is selected. */
+	/** Mobile: open the EPUB++ menu when a selection settles. */
 	selectionBar: boolean;
 	/** Last reading position per EPUB path. */
 	positions: Record<string, string>;

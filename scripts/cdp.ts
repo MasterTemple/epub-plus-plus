@@ -32,6 +32,7 @@ const send = (method: string, params: object = {}) =>
 		ws.send(JSON.stringify({ id, method, params }));
 	});
 if (opt('--logs')) await send('Runtime.enable');
+if (opt('--throttle')) await send('Emulation.setCPUThrottlingRate', { rate: Number(opt('--throttle')) });
 let expr = opt('--eval');
 const file = opt('--file');
 if (file) expr = await Bun.file(file).text();

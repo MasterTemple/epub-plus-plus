@@ -46,6 +46,17 @@ if (hover) {
 	for (let i = 0; i < 3; i++) await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + i, y, modifiers: mods || 0, buttons: 0 });
 	await Bun.sleep(Number(opt('--hover-wait') ?? 1500));
 }
+const swipe = opt('--swipe'); // x1,y1,x2,y2 (touch)
+if (swipe) {
+	const [x1, y1, x2, y2] = swipe.split(',').map(Number);
+	await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+	await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x1, y: y1 }] });
+	for (let i = 1; i <= 12; i++) {
+		await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x1 + ((x2 - x1) * i) / 12, y: y1 + ((y2 - y1) * i) / 12 }] });
+		await Bun.sleep(16);
+	}
+	await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
 const rc = opt('--rightclick');
 if (rc) {
 	const [x, y] = rc.split(',').map(Number);

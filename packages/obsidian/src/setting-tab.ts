@@ -307,8 +307,8 @@ export class EppSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl).setName('Mobile').setHeading();
 		new Setting(containerEl)
-			.setName('Selection toolbar')
-			.setDesc('Show copy buttons while text is selected (there is no right-click on mobile).')
+			.setName('Selection menu')
+			.setDesc("Open EPUB++'s copy menu when you select text (there is no right-click on mobile). Its \"System menu\" item brings back the phone's own menu.")
 			.addToggle((t) =>
 				t.setValue(s.selectionBar).onChange(async (v) => {
 					s.selectionBar = v;
