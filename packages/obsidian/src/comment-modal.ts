@@ -27,13 +27,14 @@ class CommentModal extends Modal {
 
 	override onOpen(): void {
 		this.modalEl.addClass('epp-comment-modal');
+		if (Platform.isMobile) this.fitAboveKeyboard();
 		this.titleEl.setText(this.opts.title ?? 'Add a comment');
 		const { contentEl } = this;
 		contentEl.createEl('blockquote', {
 			cls: 'epp-comment-quote',
 			text: this.quote.length > 400 ? `${this.quote.slice(0, 400)}…` : this.quote,
 		});
-		const area = contentEl.createEl('textarea', { cls: 'epp-comment-input', attr: { rows: '5', placeholder: 'Your comment…' } });
+		const area = contentEl.createEl('textarea', { cls: 'epp-comment-input', attr: { rows: Platform.isMobile ? '3' : '5', placeholder: 'Your comment…' } });
 		area.value = this.value;
 		area.addEventListener('input', () => (this.value = area.value));
 		area.addEventListener('keydown', (e) => {
@@ -49,6 +50,29 @@ class CommentModal extends Modal {
 		window.setTimeout(() => area.focus(), 50);
 	}
 
+	/**
+	 * Mobile: sit at the top of the screen (CSS) and shrink to the area the on-screen keyboard leaves
+	 * visible, so the buttons stay reachable.
+	 */
+	private fitAboveKeyboard(): void {
+		this.containerEl.addClass('epp-comment-container');
+		const vv = window.visualViewport;
+		if (!vv) return;
+		const fit = () => {
+			this.modalEl.style.maxHeight = `${Math.max(200, vv.height - 24)}px`;
+			this.containerEl.style.paddingTop = `${vv.offsetTop + 12}px`;
+		};
+		fit();
+		vv.addEventListener('resize', fit);
+		vv.addEventListener('scroll', fit);
+		this.stopFit = () => {
+			vv.removeEventListener('resize', fit);
+			vv.removeEventListener('scroll', fit);
+		};
+	}
+
+	private stopFit: (() => void) | null = null;
+
 	private submit(): void {
 		this.done = true;
 		this.resolve(this.value.trim());
@@ -56,6 +80,7 @@ class CommentModal extends Modal {
 	}
 
 	override onClose(): void {
+		this.stopFit?.();
 		if (!this.done) this.resolve(null);
 		this.contentEl.empty();
 	}
