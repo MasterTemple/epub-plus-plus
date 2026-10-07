@@ -17,3 +17,4 @@ export {
 	type SelectionInfo,
 } from './render/reader';
 export * from './render/settings';
+export { rangeToMarkdown } from './render/markdown';

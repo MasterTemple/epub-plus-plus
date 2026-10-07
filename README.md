@@ -39,7 +39,14 @@ The repo has two packages:
   - While a book has one, copying from the selection menu can **insert** the annotation into the right chapter section, in book order. Placement uses a binary search over existing blocks by their CFI.
   - Text-fragment links are located in the book to compare them; this can be turned off. When the position is unclear, the annotation is appended to the end of the section.
   - *Copy*, *Insert* or *Both* is a global default, overridable per file via its `epub-annotation-mode` property or the row in the selection menu.
+- **Comments on highlights.** A comment is the text after the double-embedded quote in a highlight's callout, the layout *Callout with comment* produces.
+  - Hovering a highlight shows its comment; on mobile, tapping does.
+  - The highlight menu has *Add comment* / *Edit comment*. Adding one double-embeds the callout's existing lines as they are and appends the comment.
+- **Markdown copying.** Selections are converted from the book's HTML to Markdown (emphasis, including CSS-styled; lists; headings; line breaks) for copying and `{{text}}`. This can be turned off.
 - **Sidebar.** The in-view sidebar has a table of contents (tracks the current chapter), search (case / whole word / regex, results grouped by chapter, Enter / Shift+Enter to step through), and a list of the book's highlights.
+- **Previews.**
+  - EPUB links preview on hover in Reading view, and in the editor without Ctrl/Cmd (toggle under Page preview).
+  - Links inside a preview either jump within the preview or open the EPUB tab.
 - **Backlinks.** Obsidian's Backlinks pane works for EPUBs. Hovering a backlink underlines its passage and scrolls to it.
 - **Appearance.** Theme (match Obsidian, light, sepia, dark, publisher), font size and family, line spacing, alignment, reading width (`em`, `ch`, `px`, `%`), margins, and image dimming.
 - **Mobile.**

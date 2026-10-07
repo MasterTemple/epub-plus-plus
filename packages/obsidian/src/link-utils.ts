@@ -96,3 +96,36 @@ export function setCalloutColor(lines: string[], lineNo: number, color: string |
 	}
 	return lines;
 }
+
+/**
+ * The link (wiki or markdown) covering column `ch` of a line, as linktext (`path#subpath`), or null.
+ * Markdown destinations are decoded the way Obsidian does (decodeURI); balanced parentheses allowed.
+ */
+export function linkAt(line: string, ch: number): string | null {
+	for (const m of line.matchAll(/!?\[\[([^\]]+)\]\]/g)) {
+		if (ch >= m.index! && ch <= m.index! + m[0].length) return m[1].split('|')[0];
+	}
+	for (let i = line.indexOf(']('); i !== -1; i = line.indexOf('](', i + 2)) {
+		const open = line.lastIndexOf('[', i);
+		let depth = 0;
+		let end = -1;
+		for (let j = i + 1; j < line.length; j++) {
+			if (line[j] === '(') depth++;
+			else if (line[j] === ')' && --depth === 0) {
+				end = j;
+				break;
+			}
+		}
+		if (open === -1 || end === -1) continue;
+		if (ch >= open && ch <= end) {
+			let dest = line.slice(i + 2, end).trim().replace(/^<|>$/g, '');
+			try {
+				dest = decodeURI(dest);
+			} catch {
+				/* keep */
+			}
+			return dest;
+		}
+	}
+	return null;
+}

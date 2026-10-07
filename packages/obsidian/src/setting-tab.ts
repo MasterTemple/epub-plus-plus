@@ -136,6 +136,15 @@ export class EppSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl).setName('Copying').setHeading();
 		new Setting(containerEl)
+			.setName('Copy text as Markdown')
+			.setDesc("Convert the book's formatting (italics, bold, lists, headings, line breaks) to Markdown when copying or inserting a selection ({{text}}). Off: plain text.")
+			.addToggle((t) =>
+				t.setValue(s.copyMarkdown).onChange(async (v) => {
+					s.copyMarkdown = v;
+					await save();
+				}),
+			);
+		new Setting(containerEl)
 			.setName('Ctrl/Cmd+C copies')
 			.setDesc('What copying a selection in an EPUB puts on the clipboard (also used by the system Copy menu).')
 			.addDropdown((d) => {
@@ -402,6 +411,22 @@ export class EppSettingTab extends PluginSettingTab {
 					this.plugin.updatePreviews();
 				}),
 			);
+		new Setting(containerEl)
+			.setName('Links inside previews')
+			.setDesc('Clicking a link to another place in the book inside a hover preview or embed. Ctrl/Cmd-click always opens a new EPUB tab.')
+			.addDropdown((d) =>
+				d
+					.addOptions({ preview: 'Jump there in the preview', tab: 'Open in the EPUB tab' })
+					.setValue(s.previewLinks)
+					.onChange(async (v) => {
+						s.previewLinks = v as 'preview' | 'tab';
+						await save();
+					}),
+			);
+		containerEl.createEl('p', {
+			cls: 'setting-item-description',
+			text: 'In the editor, EPUB links preview on plain hover. Change that under Settings → Page preview → "EPUB++: EPUB links in the editor".',
+		});
 		new Setting(containerEl)
 			.setName('Preview height')
 			.addSlider((sl) =>

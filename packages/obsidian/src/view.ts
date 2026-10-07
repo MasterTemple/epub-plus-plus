@@ -6,6 +6,8 @@ import type EpubPlusPlus from './main';
 import { HOVER_SOURCE, VIEW_TYPE_EPUB } from './constants';
 import { AppearancePanel } from './appearance';
 import { Sidebar } from './sidebar';
+import { CommentCard } from './comment-card';
+import { askForComment } from './comment-modal';
 
 export { VIEW_TYPE_EPUB };
 
@@ -20,6 +22,7 @@ export class EpubView extends FileView {
 	private paletteEl!: HTMLElement;
 	private sidebar!: Sidebar;
 	private searchNavEl!: HTMLElement;
+	commentCard!: CommentCard;
 	private appearance!: AppearancePanel;
 	private pendingSubpath: string | null = null;
 	private loadToken = 0;
@@ -87,6 +90,7 @@ export class EpubView extends FileView {
 		navButton('chevron-up', 'Previous result', -1);
 		navButton('chevron-down', 'Next result', 1);
 		this.appearance = new AppearancePanel(this.plugin, this.mainEl.createDiv('epp-appearance'));
+		this.commentCard = this.addChild(new CommentCard(this.app, this.mainEl));
 		this.toggleSidebar(!Platform.isMobile && this.plugin.settings.sidebarOpen, false);
 
 		this.offIndex = (() => {
@@ -242,8 +246,10 @@ export class EpubView extends FileView {
 				const tappedAt = Date.now();
 				window.setTimeout(() => {
 					if (this.lastDoubleTap >= tappedAt) return;
+					void this.commentCard.show(entries, 'top');
 					const menu = new Menu();
 					this.addHighlightItems(menu, entries);
+					menu.onHide(() => this.commentCard.hide());
 					menu.showAtMouseEvent(e);
 				}, 320);
 			} else if (entries.length > 1) {
@@ -253,6 +259,8 @@ export class EpubView extends FileView {
 			} else this.plugin.openSource(entries[0], this);
 		});
 		reader.on('highlight-hover', (e, specs) => {
+			this.commentCard.hover(e, specs.map((s) => s.data as HighlightEntry));
+			if (!specs.length) return;
 			const entry = specs[0].data as HighlightEntry;
 			this.app.workspace.trigger('hover-link', {
 				event: e,
@@ -422,9 +430,19 @@ export class EpubView extends FileView {
 
 	private onCopy(e: ClipboardEvent): void {
 		const what = this.plugin.resolveCopyAction(this.plugin.settings.copyAction);
-		if (!what || what === 'text' || !e.clipboardData) return; // default browser copy
+		if (!what || !e.clipboardData) return; // default browser copy
 		const sel = this.reader?.getSelection();
 		if (!sel) return;
+		if (what === 'text') {
+			if (!this.plugin.settings.copyMarkdown) return; // default browser copy
+			// Markdown as plain text; keep the book's HTML for rich-text targets.
+			const holder = sel.range.startContainer.ownerDocument!.createElement('div');
+			holder.appendChild(sel.range.cloneContents());
+			e.clipboardData.setData('text/plain', this.plugin.selectionText(sel));
+			e.clipboardData.setData('text/html', holder.innerHTML);
+			e.preventDefault();
+			return;
+		}
 		if (this.plugin.asksForComment(what)) {
 			// Needs a prompt first, so it can't fill this (synchronous) copy event.
 			e.preventDefault();
@@ -571,6 +589,18 @@ export class EpubView extends FileView {
 		if (ann) this.addAnnotationModeRow(menu, ann);
 	}
 
+	/** Prompt for a highlight's comment and write it into the note. */
+	async editComment(entry: HighlightEntry): Promise<void> {
+		const quote = this.reader?.highlightRange(entry.id)?.toString().replace(/\s+/g, ' ').trim() ?? '';
+		const comment = await askForComment(this.app, quote, {
+			title: entry.comment ? 'Edit comment' : 'Add comment',
+			initial: entry.comment ?? '',
+			submit: 'Save',
+		});
+		if (comment === null) return;
+		await this.plugin.setHighlightComment(entry, comment);
+	}
+
 	/** `[Copy | Insert | Both]`: what the items above do for this book's annotation file. */
 	private addAnnotationModeRow(menu: Menu, ann: TFile): void {
 		menu.addItem((item) => {
@@ -623,6 +653,14 @@ export class EpubView extends FileView {
 				if (id === 'open') menu.addItem((i) => i.setTitle(`Open in "${note}"`).setIcon('file-text').setSection(section).onClick(() => this.plugin.openSource(entry, this)));
 				else if (id === 'color')
 					this.addColorItem(menu, 'Change color', 'palette', section, (c) => this.plugin.setHighlightColor(entry, c), entry.color ?? null);
+				else if (id === 'comment')
+					menu.addItem((i) =>
+						i
+							.setTitle(entry.comment ? 'Edit comment' : 'Add comment')
+							.setIcon(entry.comment ? 'message-square-text' : 'message-square-plus')
+							.setSection(section)
+							.onClick(() => this.editComment(entry)),
+					);
 				else if (id === 'copy-link')
 					menu.addItem((i) =>
 						i

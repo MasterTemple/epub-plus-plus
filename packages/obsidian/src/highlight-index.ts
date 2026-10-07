@@ -1,4 +1,5 @@
 import { parseLocator, tryParseCfi } from '@epub-pp/core';
+import { getComment } from './comment-utils';
 import { Events, TFile, parseLinktext, type App, type CachedMetadata, type Pos, type ReferenceCache } from 'obsidian';
 
 export interface HighlightEntry {
@@ -13,6 +14,8 @@ export interface HighlightEntry {
 	displayText: string;
 	original: string;
 	position: Pos;
+	/** Comment written next to the link in the note (see comment-utils), once loaded. */
+	comment?: string | null;
 }
 
 /**
@@ -69,7 +72,23 @@ export class HighlightIndex extends Events {
 			}
 		}
 		if (notify && affected.size) this.trigger('changed', affected);
+		if (cache && this.bySource.has(file.path)) void this.loadComments(file);
 		return affected;
+	}
+
+	/** Comments need the note's text (not in the metadata cache): read it and attach them. */
+	private async loadComments(file: TFile): Promise<void> {
+		const text = await this.app.vault.cachedRead(file);
+		const lines = text.split('\n');
+		const affected = new Set<string>();
+		for (const epub of this.bySource.get(file.path) ?? []) {
+			for (const e of this.byEpub.get(epub)?.get(file.path) ?? []) {
+				const comment = getComment(lines, e.position.start.line);
+				if (comment !== (e.comment ?? null)) affected.add(epub);
+				e.comment = comment;
+			}
+		}
+		if (affected.size) this.trigger('changed', affected);
 	}
 
 	removeSource(sourcePath: string, notify = false): Set<string> {

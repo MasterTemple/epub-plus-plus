@@ -56,20 +56,32 @@ class EpubEmbed extends Component {
 			e.stopPropagation();
 			plugin.openEpub(file, this.subpath, e.ctrlKey || e.metaKey ? 'tab' : false);
 		});
-		const host = el.createDiv('epp-embed-host');
-		host.style.height = `${s.previewHeight}px`;
+		this.title = title;
+		this.host = el.createDiv('epp-embed-host');
+		this.host.style.height = `${s.previewHeight}px`;
+		await this.renderAt(this.subpath, true);
+	}
 
+	private title!: HTMLElement;
+	private host!: HTMLElement;
+
+	/** (Re)render the preview around a locator. `highlight`: draw the linked passage. */
+	private async renderAt(subpath: string, highlight: boolean): Promise<void> {
+		const { plugin, file } = this;
+		const s = plugin.settings;
 		try {
 			const book = await plugin.getBook(file);
 			if (this.unloaded) return;
-			const loc = parseLocator(this.subpath);
+			const loc = parseLocator(subpath);
 			const locator = loc.cfi ?? loc.textFragment ?? loc.href;
-			const reader = new EpubReader(host, book, {
+			this.reader?.destroy();
+			const reader = new EpubReader(this.host, book, {
 				settings: { ...s.reader, width: 0, margin: 16 },
 				palette: plugin.paletteRecord(),
 				defaultColor: s.defaultColor,
 				highlightOpacity: s.highlightOpacity,
 				spineItems: spineItemsFor(book, loc),
+				onInternalLink: (href, e) => this.onLink(href, e),
 			});
 			this.reader = reader;
 			await reader.render();
@@ -77,21 +89,36 @@ class EpubEmbed extends Component {
 			let chapter = '';
 			if (locator) {
 				const range = reader.resolve(locator);
-				if (range && (loc.cfi || loc.textFragment)) {
+				if (range && highlight && (loc.cfi || loc.textFragment)) {
 					const color = loc.params.color ?? (s.noColor === 'none' ? null : s.defaultColor);
 					reader.setHighlights(color ? [{ id: 'target', locator, color }] : []);
 				}
 				if (range) {
-					reader.scrollToRange(range, { position: range.collapsed ? 'top' : 'center' });
+					reader.scrollToRange(range, { position: range.collapsed || !highlight ? 'top' : 'center' });
 					chapter = reader.tocItemAt(range)?.label ?? '';
 				} else chapter = 'location not found';
 			}
-			title.setText([book.metadata.title, chapter].filter(Boolean).join(' · '));
+			this.title.setText([book.metadata.title, chapter].filter(Boolean).join(' · '));
 		} catch (e) {
 			console.error('[epub-pp] preview failed', e);
-			host.empty();
-			host.createDiv({ cls: 'epp-error', text: `Could not preview this EPUB: ${(e as Error).message}` });
+			this.host.empty();
+			this.host.createDiv({ cls: 'epp-error', text: `Could not preview this EPUB: ${(e as Error).message}` });
 		}
+	}
+
+	/** Links inside the book: jump within the preview, or open the EPUB tab (setting / Ctrl-click). */
+	private onLink(href: string, e: MouseEvent): boolean {
+		e.preventDefault();
+		e.stopPropagation();
+		const mod = e.ctrlKey || e.metaKey;
+		if (mod || this.plugin.settings.previewLinks === 'tab') {
+			void this.plugin.openEpub(this.file, href, mod ? 'tab' : false);
+			return true;
+		}
+		// Rendered already (same chapter)? Let the reader scroll there.
+		if (this.reader?.resolve(href)) return false;
+		void this.renderAt(href, false);
+		return true;
 	}
 
 	override onunload(): void {

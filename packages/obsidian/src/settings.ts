@@ -54,6 +54,10 @@ export interface EppSettings {
 	/** ms, including the fade-out. */
 	jumpHighlightDuration: number;
 	jumpHighlightColor: string;
+	/** Copy selections as Markdown converted from the book's HTML (emphasis, lists…) instead of plain text. */
+	copyMarkdown: boolean;
+	/** Links clicked inside a preview: jump within the preview, or open the EPUB tab. */
+	previewLinks: 'preview' | 'tab';
 	/** Hover previews of EPUB links and `![[book.epub#…]]` embeds. */
 	previews: boolean;
 	/** Height of previews / embeds in px. */
@@ -95,6 +99,7 @@ export const SELECTION_MENU_LABELS: Record<string, string> = {
 export const HIGHLIGHT_MENU_LABELS: Record<string, string> = {
 	open: 'Open the note',
 	color: 'Change color',
+	comment: 'Add / edit comment',
 	'copy-link': 'Copy link',
 };
 
@@ -132,6 +137,8 @@ export const DEFAULT_SETTINGS: EppSettings = {
 	jumpHighlightDuration: 2000,
 	jumpHighlightColor: '#ffb000',
 	previews: true,
+	copyMarkdown: true,
+	previewLinks: 'preview',
 	previewHeight: 320,
 	openEpubIn: 'split',
 	openNoteIn: 'split',

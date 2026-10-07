@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { parseLocator } from '@epub-pp/core';
-import { formatLink, renderTemplate, setCalloutColor, setLinkColor } from '../src/link-utils';
+import { formatLink, linkAt, renderTemplate, setCalloutColor, setLinkColor } from '../src/link-utils';
 
 const cfi = 'epubcfi(/6/14!/4/2,/1:0,/1:16)';
 
@@ -51,4 +51,11 @@ test('setCalloutColor', () => {
 	expect(setCalloutColor(lines, 2, 'red')[1]).toBe('> [!quote|red] [[a.epub#x]]');
 	expect(setCalloutColor(lines, 0, 'red')).toBe(lines);
 	expect(setCalloutColor(['> [!note]- x'], 0, 'blue')[0]).toBe('> [!note|blue]- x');
+});
+
+test('linkAt', () => {
+	const line = 'See [[B.epub#epubcfi(/6/4!/4/2,/1:0,/1:5)|here]] and [md](Moby%20Dick.epub#epubcfi%28/6/14!/4/2/1%3A0%29&color=red) end';
+	expect(linkAt(line, 10)).toBe('B.epub#epubcfi(/6/4!/4/2,/1:0,/1:5)');
+	expect(linkAt(line, line.indexOf('[md]') + 2)).toBe('Moby Dick.epub#epubcfi(/6/14!/4/2/1%3A0)&color=red');
+	expect(linkAt(line, line.length - 1)).toBeNull();
 });

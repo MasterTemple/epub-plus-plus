@@ -20,6 +20,7 @@ import { TextIndex } from '../search/text-index';
 import { Emitter } from '../util/emitter';
 import { splitFragment } from '../util/path';
 import { buildSection, prepareSection, type PreparedSection } from './content';
+import { rangeToMarkdown } from './markdown';
 import { BASE_CSS, DEFAULT_SETTINGS, settingsToVars, type ReaderSettings } from './settings';
 
 export interface HighlightSpec<T = unknown> {
@@ -39,6 +40,8 @@ export interface SelectionInfo {
 	tocItem: TocItem | null;
 	/** Lazily computed text fragment directive (`:~:text=...`). */
 	textFragment(): string | null;
+	/** The selection converted to Markdown (emphasis, lists, paragraphs…), computed lazily. */
+	markdown(): string;
 }
 
 export interface Location {
@@ -61,6 +64,7 @@ type ReaderEvents = {
 	ready: [];
 	relocated: [Location];
 	'highlight-click': [MouseEvent, HighlightSpec[]];
+	/** Fired when the highlights under the pointer change (empty array: left all highlights). */
 	'highlight-hover': [MouseEvent, HighlightSpec[]];
 	contextmenu: [MouseEvent, { selection: SelectionInfo | null; highlights: HighlightSpec[] }];
 	'external-link': [MouseEvent, string];
@@ -80,6 +84,8 @@ export interface ReaderOptions {
 	flash?: FlashOptions;
 	/** Render only these spine indices (e.g. for a lightweight preview). Default: all. */
 	spineItems?: number[];
+	/** Called for clicks on links inside the book; return true to handle it yourself (default: goTo). */
+	onInternalLink?: (href: string, event: MouseEvent) => boolean;
 }
 
 export interface FlashOptions {
@@ -137,6 +143,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 	private flashStyle: HTMLStyleElement;
 	private flashDefaults: Required<FlashOptions>;
 	private readonly spineFilter: Set<number> | null;
+	private readonly onInternalLink?: (href: string, event: MouseEvent) => boolean;
 	/** Reading position to restore when the host is re-attached or resized (DOM moves reset scrollTop). */
 	private anchor: Range | null = null;
 	private scratchRange: Range | null = null;
@@ -159,6 +166,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		this.highlightOpacity = opts.highlightOpacity ?? 0.4;
 		this.flashDefaults = { duration: 1600, fade: 600, color: '#ffb000', opacity: 0.6, ...opts.flash };
 		this.spineFilter = opts.spineItems ? new Set(opts.spineItems) : null;
+		this.onInternalLink = opts.onInternalLink;
 
 		this.shadow = host.shadowRoot ?? host.attachShadow({ mode: 'open' });
 		this.shadow.replaceChildren();
@@ -641,6 +649,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		const cfi = this.cfiFromRange(r);
 		if (!cfi) return null;
 		let tf: string | null | undefined;
+		let md: string | undefined;
 		return {
 			range: r,
 			text: rangeText(r),
@@ -648,6 +657,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 			spineIndex: this.spineIndexOf(r.startContainer),
 			tocItem: this.tocItemAt(r),
 			textFragment: () => (tf === undefined ? (tf = this.textFragmentFromRange(r)) : tf),
+			markdown: () => (md ??= rangeToMarkdown(r)),
 		};
 	}
 
@@ -843,7 +853,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 				const external = a.getAttribute('data-epp-external');
 				if (internal || external) {
 					e.preventDefault();
-					if (internal) this.goTo(internal);
+					if (internal && !this.onInternalLink?.(internal, e)) this.goTo(internal);
 					else if (external) this.emit('external-link', e, external);
 					return;
 				}
@@ -863,6 +873,11 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		});
 
 		let hoverRaf = 0;
+		on(this.scroller, 'mouseleave', (e) => {
+			if (!this.lastHover) return;
+			this.lastHover = '';
+			this.emit('highlight-hover', e, []);
+		});
 		on(this.scroller, 'mousemove', (e) => {
 			if (hoverRaf || !this.highlights.length) return;
 			hoverRaf = this.win.requestAnimationFrame(() => {
@@ -872,7 +887,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 				const key = hits.map((h) => h.id).join('|');
 				if (key !== this.lastHover) {
 					this.lastHover = key;
-					if (hits.length) this.emit('highlight-hover', e, hits);
+					this.emit('highlight-hover', e, hits); // empty when leaving highlights
 				}
 			});
 		});

@@ -610,3 +610,47 @@ body.epp-appearance-open .mobile-navbar {
 	width: 16px;
 	height: 16px;
 }
+
+/* ---------- Highlight comment card ---------- */
+.epp-comment-card {
+	display: none;
+	position: absolute;
+	z-index: 6;
+	width: min(360px, calc(100% - 16px));
+	max-height: 40%;
+	overflow: hidden;
+	padding: var(--size-4-2) var(--size-4-3);
+	background: var(--background-primary);
+	border: var(--border-width) solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	box-shadow: var(--shadow-l);
+	pointer-events: none;
+	font-size: var(--font-ui-small);
+}
+.epp-comment-card.is-visible {
+	display: block;
+}
+.epp-comment-card.is-pinned {
+	top: var(--size-4-2);
+	left: var(--size-4-2);
+	right: var(--size-4-2);
+	width: auto;
+	pointer-events: auto;
+	overflow-y: auto;
+}
+.epp-comment-card-item + .epp-comment-card-item {
+	margin-top: var(--size-4-2);
+	padding-top: var(--size-4-2);
+	border-top: var(--border-width) solid var(--background-modifier-border);
+}
+.epp-comment-card .markdown-rendered > :first-child {
+	margin-top: 0;
+}
+.epp-comment-card .markdown-rendered > :last-child {
+	margin-bottom: 0;
+}
+.epp-comment-card-source {
+	margin-top: var(--size-4-1);
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}

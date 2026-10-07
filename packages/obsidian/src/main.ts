@@ -13,15 +13,16 @@ import {
 	type OpenViewState,
 } from 'obsidian';
 import { HighlightIndex, resolveEpub, type HighlightEntry } from './highlight-index';
-import { formatLink, renderTemplate, setCalloutColor, setLinkColor } from './link-utils';
+import { formatLink, linkAt, renderTemplate, setCalloutColor, setLinkColor } from './link-utils';
 import { COMMENT_TEMPLATE, DEFAULT_SETTINGS, needsComment, newFormatId, syncMenus, type CopyAction, type CopyFormat, type EppSettings, type OpenTarget } from './settings';
 import { Annotations } from './annotations';
 import { askForComment } from './comment-modal';
+import { setComment } from './comment-utils';
 import { registerEpubEmbeds } from './embed';
 import { EppSettingTab } from './setting-tab';
 import { EpubView, VIEW_TYPE_EPUB } from './view';
 
-import { HOVER_SOURCE } from './constants';
+import { EDITOR_HOVER_SOURCE, HOVER_SOURCE } from './constants';
 
 export type CopyTarget = CopyFormat | 'link' | 'alt-link' | 'text';
 
@@ -39,6 +40,10 @@ export default class EpubPlusPlus extends Plugin {
 		this.registerView(VIEW_TYPE_EPUB, (leaf) => new EpubView(leaf, this));
 		this.registerExtensions(['epub'], VIEW_TYPE_EPUB);
 		this.registerHoverLinkSource(HOVER_SOURCE, { display: 'EPUB++ highlights', defaultMod: true });
+		// Obsidian's own editor previews need Ctrl/Cmd; this source (toggleable under Page preview)
+		// previews EPUB links in the editor on plain hover, like Reading view does.
+		this.registerHoverLinkSource(EDITOR_HOVER_SOURCE, { display: 'EPUB++: EPUB links in the editor', defaultMod: false });
+		this.registerEditorHover();
 		this.addSettingTab(new EppSettingTab(this.app, this));
 		this.patchLinkOpening();
 		this.registerIndexEvents();
@@ -46,6 +51,40 @@ export default class EpubPlusPlus extends Plugin {
 		this.updateCalloutStyles();
 		this.registerBacklinkHover();
 		this.updatePreviews();
+	}
+
+	private registerEditorHover(): void {
+		this.registerDomEvent(document, 'mouseover', (e) => {
+			if (!this.settings.previews || e.ctrlKey || e.metaKey) return; // with a modifier Obsidian handles it
+			const el = (e.target as HTMLElement | null)?.closest?.('.cm-hmd-internal-link, .cm-link, .cm-url, .cm-underline');
+			if (!el || !el.closest('.markdown-source-view')) return;
+			let view: MarkdownView | null = null;
+			this.app.workspace.iterateAllLeaves((l) => {
+				if (!view && l.view instanceof MarkdownView && l.view.containerEl.contains(el)) view = l.view;
+			});
+			const mdView = view as MarkdownView | null;
+			const cm = (mdView?.editor as any)?.cm;
+			if (!mdView?.file || !cm?.posAtDOM) return;
+			let linktext: string | null = null;
+			try {
+				const pos = cm.posAtDOM(el, 0);
+				const line = cm.state.doc.lineAt(pos);
+				linktext = linkAt(line.text, pos - line.from + 1);
+			} catch {
+				return;
+			}
+			if (!linktext) return;
+			const { path } = parseLinktext(linktext);
+			if (!resolveEpub(this.app, path, mdView.file.path)) return;
+			this.app.workspace.trigger('hover-link', {
+				event: e,
+				source: EDITOR_HOVER_SOURCE,
+				hoverParent: mdView,
+				targetEl: el,
+				linktext,
+				sourcePath: mdView.file.path,
+			});
+		});
 	}
 
 	/** Register or unregister the EPUB embed (used by `![[book.epub#…]]` and link hover previews). */
@@ -276,6 +315,26 @@ export default class EpubPlusPlus extends Plugin {
 		}
 	}
 
+	/** Add, change or (with '') remove the comment of a highlight in its note. */
+	async setHighlightComment(entry: HighlightEntry, comment: string): Promise<void> {
+		const file = this.app.vault.getFileByPath(entry.sourcePath);
+		if (!file) return;
+		let failed = false;
+		await this.app.vault.process(file, (data) => {
+			let start = entry.position.start.offset;
+			if (data.slice(start, entry.position.end.offset) !== entry.original) {
+				start = data.indexOf(entry.original);
+				if (start === -1) {
+					failed = true;
+					return data;
+				}
+			}
+			const line = data.slice(0, start).split('\n').length - 1;
+			return setComment(data.split('\n'), line, comment, entry.color ?? null).join('\n');
+		});
+		if (failed) new Notice('EPUB++: could not find the link in the note (it may have changed).');
+	}
+
 	/** Rewrite the `&color=` parameter (and enclosing callout color) of a highlight's link in its note. */
 	async setHighlightColor(entry: HighlightEntry, color: string | null): Promise<void> {
 		const file = this.app.vault.getFileByPath(entry.sourcePath);
@@ -331,10 +390,21 @@ export default class EpubPlusPlus extends Plugin {
 		return leaf?.view instanceof MarkdownView ? (leaf.view.file?.path ?? null) : null;
 	}
 
+	/** The selection's text as copied: Markdown converted from the book's HTML, or plain text. */
+	selectionText(info: SelectionInfo): string {
+		if (!this.settings.copyMarkdown) return info.text;
+		try {
+			return info.markdown() || info.text;
+		} catch (e) {
+			console.warn('[epub-pp] markdown conversion failed', e);
+			return info.text;
+		}
+	}
+
 	templateVars(view: EpubView, info: SelectionInfo, color: string | null, link: string): Record<string, string> {
 		const md = view.book?.metadata;
 		return {
-			text: info.text,
+			text: this.selectionText(info),
 			link,
 			color: color ?? '',
 			book: md?.title ?? view.file?.basename ?? '',
@@ -355,7 +425,7 @@ export default class EpubPlusPlus extends Plugin {
 
 	/** The clipboard text for a selection (synchronous, so it can run inside a `copy` event). */
 	renderCopy(view: EpubView, info: SelectionInfo, what: CopyTarget, color: string | null, comment = ''): string {
-		if (what === 'text') return info.text;
+		if (what === 'text') return this.selectionText(info);
 		const link = this.buildLink(view, info, color, what === 'alt-link');
 		return typeof what === 'string' ? link : renderTemplate(what.template, { ...this.templateVars(view, info, color, link), comment });
 	}
