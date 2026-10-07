@@ -22,6 +22,17 @@ export interface MenuEntry {
 }
 
 export type LinkType = 'cfi' | 'text';
+/** What a touch gesture on a highlight does (mobile). */
+export type HighlightGestureAction = 'open' | 'comment' | 'menu' | 'color' | 'copy-link' | 'select' | 'none';
+export const HIGHLIGHT_GESTURE_LABELS: Record<HighlightGestureAction, string> = {
+	open: 'Open the note (link)',
+	comment: 'Add / edit comment',
+	menu: 'Open the highlight menu',
+	color: 'Change color',
+	'copy-link': 'Copy link',
+	select: 'Select the paragraph',
+	none: 'Nothing',
+};
 /** What copying a selection does when the book has an annotation file. */
 export type AnnotationMode = 'copy' | 'insert' | 'both';
 export const ANNOTATION_MODES: AnnotationMode[] = ['copy', 'insert', 'both'];
@@ -86,6 +97,10 @@ export interface EppSettings {
 	highlightsGroup: 'book' | 'note' | 'chapter';
 	/** "Split pane": reuse an open tab of the EPUB, or another pane, before splitting. */
 	reusePanes: boolean;
+	/** Mobile: what tapping, double-tapping and holding a highlight do. */
+	highlightTap: HighlightGestureAction;
+	highlightDoubleTap: HighlightGestureAction;
+	highlightHold: HighlightGestureAction;
 	/** Bumped when settings need a one-time migration. */
 	settingsVersion: number;
 	/** Last reading position per EPUB path. */
@@ -136,6 +151,9 @@ export const DEFAULT_SETTINGS: EppSettings = {
 	highlightsFilter: 'all',
 	highlightsGroup: 'book',
 	reusePanes: true,
+	highlightTap: 'open',
+	highlightDoubleTap: 'comment',
+	highlightHold: 'menu',
 	selectionMenu: [],
 	highlightMenu: [],
 	settingsVersion: 2,

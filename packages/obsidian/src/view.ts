@@ -1,7 +1,7 @@
 import { EpubBook, EpubReader, parseLocator, type HighlightSpec, type SelectionInfo, type TocItem } from '@epub-pp/core';
 import { FileView, Menu, Notice, Platform, Scope, TFile, setIcon, type MenuItem, type WorkspaceLeaf } from 'obsidian';
 import type { HighlightEntry } from './highlight-index';
-import { ANNOTATION_MODES, type AnnotationMode } from './settings';
+import { ANNOTATION_MODES, type AnnotationMode, type HighlightGestureAction } from './settings';
 import type EpubPlusPlus from './main';
 import { HOVER_SOURCE, VIEW_TYPE_EPUB } from './constants';
 import { AppearancePanel } from './appearance';
@@ -242,15 +242,12 @@ export class EpubView extends FileView {
 		reader.on('highlight-click', (e, specs) => {
 			const entries = specs.map((s) => s.data as HighlightEntry);
 			if (Platform.isMobile) {
-				// Wait a moment: this tap may be the first half of a double tap (select paragraph).
+				// Wait a moment: this tap may be the first half of a double tap, or the end of a hold.
 				const tappedAt = Date.now();
+				if (tappedAt - this.lastHold < 1000) return;
 				window.setTimeout(() => {
 					if (this.lastDoubleTap >= tappedAt) return;
-					void this.commentCard.show(entries, 'top');
-					const menu = new Menu();
-					this.addHighlightItems(menu, entries);
-					menu.onHide(() => this.commentCard.hide());
-					menu.showAtMouseEvent(e);
+					this.runHighlightGesture(this.plugin.settings.highlightTap, entries, { x: e.clientX, y: e.clientY });
 				}, 320);
 			} else if (entries.length > 1) {
 				const menu = new Menu();
@@ -277,6 +274,12 @@ export class EpubView extends FileView {
 				// Touch browsers fire contextmenu on long-press and when tapping a selection; that's what opens
 				// the OS selection toolbar. After "System menu", leave it alone so the OS menu can open.
 				if (this.nativeSelectionMode) return;
+				if (highlights.length) {
+					// Long-press on a highlight (Android fires contextmenu; the hold timer may have run already).
+					e.preventDefault();
+					if (Date.now() - this.lastHold > 1000) this.onHold(e.clientX, e.clientY);
+					return;
+				}
 				const sel = selection ?? (this.reader?.getSelection() || null);
 				if (sel && this.plugin.settings.selectionBar) {
 					e.preventDefault();
@@ -350,6 +353,14 @@ export class EpubView extends FileView {
 			x0 = t?.clientX ?? 0;
 			y0 = t?.clientY ?? 0;
 			t0 = Date.now();
+			window.clearTimeout(this.holdTimer);
+			if (inReader && Platform.isMobile && e.touches.length === 1) {
+				const hx = x0;
+				const hy = y0;
+				this.holdTimer = window.setTimeout(() => {
+					if (axis === null && this.touching) this.onHold(hx, hy);
+				}, 450);
+			}
 			dx = 0;
 			axis = null;
 			mine = null;
@@ -360,6 +371,7 @@ export class EpubView extends FileView {
 			dx = t.clientX - x0;
 			const dy = t.clientY - y0;
 			if (axis === null && Math.abs(dx) + Math.abs(dy) > 8) {
+				window.clearTimeout(this.holdTimer);
 				axis = Math.abs(dy) > Math.abs(dx) ? 'y' : 'x';
 				// A drag that starts after a long press is adjusting a text selection, not a swipe.
 				const longPress = Date.now() - t0 > 350 || !!this.reader?.getSelectionRange();
@@ -371,6 +383,15 @@ export class EpubView extends FileView {
 			if ((axis === 'y' && readerScrolled()) || mine) e.stopPropagation();
 		};
 		const end = (e: TouchEvent) => {
+			window.clearTimeout(this.holdTimer);
+			if (Date.now() - this.lastHold < 1000) {
+				// The hold already acted; this release must not count as a tap, nor produce the synthetic
+				// mousedown/click that would close the menu it opened.
+				e.preventDefault();
+				this.touching = false;
+				this.lastTap = { t: 0, x: 0, y: 0 };
+				return;
+			}
 			if (axis === null && inReader && Date.now() - t0 < 300 && this.handleTap(e)) {
 				this.touching = false;
 				return;
@@ -396,6 +417,68 @@ export class EpubView extends FileView {
 
 	private lastTap = { t: 0, x: 0, y: 0 };
 	private lastDoubleTap = 0;
+	private lastHold = 0;
+	private holdTimer = 0;
+
+	/** A long press: when it is on a highlight, run the configured action and keep the OS selection away. */
+	private onHold(x: number, y: number): void {
+		const hits = this.reader?.highlightsAt(x, y) ?? [];
+		if (!hits.length) return;
+		this.lastHold = Date.now();
+		window.clearTimeout(this.selectionMenuTimer);
+		const doc = this.contentEl.doc;
+		// The OS starts selecting the word under a long press; drop that selection.
+		for (const ms of [0, 120, 400]) window.setTimeout(() => doc.getSelection()?.removeAllRanges(), ms);
+		this.runHighlightGesture(this.plugin.settings.highlightHold, hits.map((h) => h.data as HighlightEntry), { x, y });
+	}
+
+	/** Mobile gestures on highlights (see settings). Several overlapping highlights open the menu. */
+	runHighlightGesture(action: HighlightGestureAction, entries: HighlightEntry[], at: { x: number; y: number }): void {
+		const entry = entries[0];
+		if (!entry || action === 'none') return;
+		if (entries.length > 1 && action !== 'select') action = 'menu';
+		switch (action) {
+			case 'open':
+				void this.plugin.openSource(entry, this);
+				break;
+			case 'comment':
+				void this.editComment(entry);
+				break;
+			case 'color':
+				this.openColorMenu(at, entry.color ?? null, (c) => {
+					this.setActiveColor(c);
+					void this.plugin.setHighlightColor(entry, c);
+				});
+				break;
+			case 'copy-link':
+				void navigator.clipboard.writeText(entry.original).then(() => new Notice('Copied link to clipboard'));
+				break;
+			case 'select': {
+				const range = this.reader?.highlightRange(entry.id);
+				const block = range && (range.startContainer.nodeType === 1 ? (range.startContainer as Element) : range.startContainer.parentElement)?.closest('p, li, blockquote, h1, h2, h3, h4, h5, h6, dd, dt, figcaption, td, th, pre, div:not(.epp-body):not(.epp-html)');
+				if (!block) break;
+				const r = block.ownerDocument.createRange();
+				r.selectNodeContents(block);
+				const info = this.reader?.describeRange(r);
+				if (info) {
+					this.lastMenuCfi = info.cfi;
+					this.showSelectionMenu(info);
+				}
+				break;
+			}
+			case 'menu': {
+				void this.commentCard.show(entries, 'top');
+				const menu = new Menu();
+				this.addHighlightItems(menu, entries);
+				menu.onHide(() => {
+					this.commentCard.hide();
+					this.afterMenuHidden();
+				});
+				menu.showAtPosition(at);
+				break;
+			}
+		}
+	}
 
 	/** Mobile: a double tap selects the paragraph under the finger and opens EPUB++'s menu. */
 	private handleTap(e: TouchEvent): boolean {
@@ -406,6 +489,13 @@ export class EpubView extends FileView {
 		this.lastTap = { t: now, x: touch.clientX, y: touch.clientY };
 		if (now - prev.t > 350 || Math.hypot(touch.clientX - prev.x, touch.clientY - prev.y) > 30) return false;
 		this.lastTap = { t: 0, x: 0, y: 0 };
+		const hits = this.reader.highlightsAt(touch.clientX, touch.clientY);
+		if (hits.length && this.plugin.settings.highlightDoubleTap !== 'select') {
+			e.preventDefault();
+			this.lastDoubleTap = now;
+			this.runHighlightGesture(this.plugin.settings.highlightDoubleTap, hits.map((h) => h.data as HighlightEntry), { x: touch.clientX, y: touch.clientY });
+			return true;
+		}
 		const target = e.composedPath()[0] as Node | undefined;
 		const el = target?.nodeType === 1 ? (target as Element) : target?.parentElement;
 		const block = el?.closest('p, li, blockquote, h1, h2, h3, h4, h5, h6, dd, dt, figcaption, td, th, pre, div:not(.epp-body):not(.epp-html)');
@@ -703,7 +793,7 @@ export class EpubView extends FileView {
 			if (!this.pendingSelection) this.nativeSelectionMode = false;
 			return;
 		}
-		if (this.nativeSelectionMode) return;
+		if (this.nativeSelectionMode || Date.now() - this.lastHold < 1500) return;
 		this.selectionMenuTimer = window.setTimeout(() => {
 			if (this.touching || this.nativeSelectionMode) return; // touchend reschedules
 			const cur = this.reader?.getSelection();

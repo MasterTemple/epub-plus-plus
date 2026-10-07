@@ -76,6 +76,14 @@ if (dbltap) {
 		if (i === 0) await Bun.sleep(120);
 	}
 }
+const hold = opt('--hold'); // x,y (touch, ~700ms)
+if (hold) {
+	const [x, y] = hold.split(',').map(Number);
+	await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+	await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+	await Bun.sleep(700);
+	await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
 const rc = opt('--rightclick');
 if (rc) {
 	const [x, y] = rc.split(',').map(Number);

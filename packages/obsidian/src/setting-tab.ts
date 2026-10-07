@@ -1,7 +1,7 @@
 import { PluginSettingTab, Setting, debounce, type App } from 'obsidian';
 import { buildAppearanceControls } from './appearance';
 import type EpubPlusPlus from './main';
-import { HIGHLIGHT_MENU_LABELS, SELECTION_MENU_LABELS, newFormatId, syncMenus, type AnnotationMode, type CopyAction, type LinkStyle, type LinkType, type OpenTarget } from './settings';
+import { HIGHLIGHT_GESTURE_LABELS, HIGHLIGHT_MENU_LABELS, SELECTION_MENU_LABELS, type HighlightGestureAction, newFormatId, syncMenus, type AnnotationMode, type CopyAction, type LinkStyle, type LinkType, type OpenTarget } from './settings';
 
 export class EppSettingTab extends PluginSettingTab {
 	constructor(
@@ -450,6 +450,19 @@ export class EppSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl).setName('Mobile').setHeading();
+		const gesture = (name: string, key: 'highlightTap' | 'highlightDoubleTap' | 'highlightHold') =>
+			new Setting(containerEl).setName(name).addDropdown((d) =>
+				d
+					.addOptions(HIGHLIGHT_GESTURE_LABELS)
+					.setValue(s[key])
+					.onChange(async (v) => {
+						s[key] = v as HighlightGestureAction;
+						await save();
+					}),
+			);
+		gesture('Tap a highlight', 'highlightTap');
+		gesture('Double-tap a highlight', 'highlightDoubleTap');
+		gesture('Hold a highlight', 'highlightHold');
 		new Setting(containerEl)
 			.setName('Selection menu')
 			.setDesc("Open EPUB++'s copy menu when you select text (there is no right-click on mobile). Its \"System menu\" item brings back the phone's own menu.")

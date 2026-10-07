@@ -53,6 +53,7 @@ The repo has two packages:
 - **Backlinks.** Obsidian's Backlinks pane works for EPUBs. Hovering a backlink underlines its passage and scrolls to it.
 - **Appearance.** Theme (match Obsidian, light, sepia, dark, publisher), font size and family, line spacing, alignment, reading width (`em`, `ch`, `px`, `%`), margins, and image dimming.
 - **Mobile.**
+  - Tapping, double-tapping and holding a highlight run configurable actions: open the note, add/edit comment, menu, color, copy link, or select the paragraph.
   - Selecting text, or double-tapping a paragraph, opens EPUB++'s menu. *System menu* hands the selection back to the OS toolbar.
   - Swiping towards the left drawer opens the EPUB++ sidebar first, and Obsidian's drawer on the next swipe. The sidebar is also a drawer on narrow desktop panes, via a container query.
   - Vertical swipes scroll the book instead of triggering Obsidian's pull-down.
