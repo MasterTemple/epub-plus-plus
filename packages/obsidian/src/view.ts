@@ -254,6 +254,22 @@ export class EpubView extends FileView {
 			});
 		});
 		reader.on('contextmenu', (e, { selection, highlights }) => {
+			if (Platform.isMobile) {
+				// Touch browsers fire contextmenu on long-press and when tapping a selection; that's what opens
+				// the OS selection toolbar. After "System menu", leave it alone so the OS menu can open.
+				if (this.nativeSelectionMode) return;
+				const sel = selection ?? (this.reader?.getSelection() || null);
+				if (sel && this.plugin.settings.selectionBar) {
+					e.preventDefault();
+					window.clearTimeout(this.selectionMenuTimer);
+					if (sel.cfi !== this.lastMenuCfi || !this.pendingSelection) {
+						this.lastMenuCfi = sel.cfi;
+						this.showSelectionMenu(sel);
+					}
+					return;
+				}
+				if (!highlights.length) return; // plain long-press on text: let the OS select it
+			}
 			const info = selection ?? this.paragraphAt(e);
 			if (!info && !highlights.length) return;
 			e.preventDefault();
@@ -511,15 +527,25 @@ export class EpubView extends FileView {
 	/** The selection our mobile menu is acting on (drawn by us while the native one is dropped). */
 	private pendingSelection: Range | null = null;
 	private restoreNativeSelection = false;
+	/**
+	 * After "System menu", the restored selection belongs to the OS: don't take it over again (a tap on
+	 * it would otherwise re-open our menu and drop it) until the selection is cleared.
+	 */
+	private nativeSelectionMode = false;
 	/** Set while one EPUB++ menu hands over to another (e.g. the color picker). */
 	keepPendingSelection = false;
 
 	/** Mobile has no right-click: open EPUB++'s menu once a selection settles (not while touching). */
 	private scheduleSelectionMenu(sel: SelectionInfo | null): void {
 		window.clearTimeout(this.selectionMenuTimer);
-		if (!Platform.isMobile || !this.plugin.settings.selectionBar || !sel) return;
+		if (!Platform.isMobile || !this.plugin.settings.selectionBar) return;
+		if (!sel) {
+			if (!this.pendingSelection) this.nativeSelectionMode = false;
+			return;
+		}
+		if (this.nativeSelectionMode) return;
 		this.selectionMenuTimer = window.setTimeout(() => {
-			if (this.touching) return; // touchend reschedules
+			if (this.touching || this.nativeSelectionMode) return; // touchend reschedules
 			const cur = this.reader?.getSelection();
 			if (!cur || cur.cfi === this.lastMenuCfi) return;
 			this.lastMenuCfi = cur.cfi;
@@ -565,6 +591,9 @@ export class EpubView extends FileView {
 					const sel = range.startContainer.ownerDocument?.getSelection();
 					sel?.removeAllRanges();
 					sel?.addRange(range);
+					// Only now: "selection cleared" events from the gap before this must not end the mode.
+					this.nativeSelectionMode = true;
+					new Notice('Tap the selected text to open the system menu', 3000);
 				}, 250);
 			}
 			this.restoreNativeSelection = false;
