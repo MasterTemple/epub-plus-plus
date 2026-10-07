@@ -253,6 +253,8 @@ export class Sidebar {
 	// --- Highlights ------------------------------------------------------------------------------
 
 	private hlEntries: HighlightEntry[] = [];
+	/** Collapsed group headings in the Highlights tab (`grouping:label`), kept while the view is open. */
+	private collapsedGroups = new Set<string>();
 	private hlRender: Component | null = null;
 
 	setHighlights(entries: HighlightEntry[]): void {
@@ -303,6 +305,7 @@ export class Sidebar {
 			plugin.saveSettings();
 			this.renderHighlights();
 		});
+		const toggleAll = groupRow.createDiv({ cls: 'clickable-icon epp-hl-collapse-all' });
 
 		const shown = this.hlEntries.filter((e) => (s.highlightsFilter === 'all' ? true : s.highlightsFilter === 'annotation' ? inAnn(e) : !inAnn(e)));
 		if (!shown.length) {
@@ -341,13 +344,49 @@ export class Sidebar {
 		let order = [...groups.keys()];
 		if (s.highlightsGroup === 'note') order = order.sort((x, y) => x.localeCompare(y)); // annotation file (\u0000) first
 
+		// Collapse / expand all groups.
+		const keyOf = (g: string) => `${s.highlightsGroup}:${g}`;
+		const grouped = order.some((g) => g);
+		toggleAll.toggle(grouped);
+		const allCollapsed = grouped && order.every((g) => this.collapsedGroups.has(keyOf(g)));
+		setIcon(toggleAll, allCollapsed ? 'chevrons-up-down' : 'chevrons-down-up');
+		toggleAll.setAttr('aria-label', allCollapsed ? 'Expand all' : 'Collapse all');
+		toggleAll.onclick = () => {
+			const expand = order.every((g) => this.collapsedGroups.has(keyOf(g)));
+			for (const g of order) {
+				if (expand) this.collapsedGroups.delete(keyOf(g));
+				else this.collapsedGroups.add(keyOf(g));
+			}
+			this.renderHighlights();
+		};
+
 		if (this.hlRender) this.view.removeChild(this.hlRender);
 		this.hlRender = this.view.addChild(new Component());
 		const palette = Object.fromEntries(s.palette.map((p) => [p.name, p.color]));
 		for (const g of order) {
 			const list = groups.get(g)!;
-			if (g) el.createDiv({ cls: 'epp-hl-group', text: `${g.replace('\u0000', '')} · ${list.length}` });
-			for (const e of list) this.renderHighlightItem(el, e, palette, inAnn(e) ? ann : null);
+			let target = el;
+			if (g) {
+				const key = keyOf(g);
+				const collapsed = this.collapsedGroups.has(key);
+				const head = el.createDiv({ cls: 'epp-hl-group is-clickable' });
+				head.toggleClass('is-collapsed', collapsed);
+				setIcon(head.createSpan('epp-hl-group-chevron'), 'chevron-down');
+				head.createSpan({ text: g.replace('\u0000', '') });
+				head.createSpan({ cls: 'epp-hl-group-count', text: String(list.length) });
+				target = el.createDiv('epp-hl-group-items');
+				target.toggle(!collapsed);
+				head.addEventListener('click', () => {
+					const now = !this.collapsedGroups.has(key);
+					if (now) this.collapsedGroups.add(key);
+					else this.collapsedGroups.delete(key);
+					head.toggleClass('is-collapsed', now);
+					target.toggle(!now);
+					const every = order.every((x) => this.collapsedGroups.has(keyOf(x)));
+					setIcon(toggleAll, every ? 'chevrons-up-down' : 'chevrons-down-up');
+				});
+			}
+			for (const e of list) this.renderHighlightItem(target, e, palette, inAnn(e) ? ann : null);
 		}
 		el.scrollTop = scroll;
 	}

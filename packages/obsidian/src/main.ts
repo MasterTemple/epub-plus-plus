@@ -327,7 +327,8 @@ export default class EpubPlusPlus extends Plugin {
 		const eState = { line: entry.position.start.line };
 		let leaf = workspace.getLeavesOfType('markdown').find((l) => (l.view as MarkdownView).file?.path === file.path) ?? null;
 		if (leaf) {
-			workspace.revealLeaf(leaf);
+			await workspace.revealLeaf(leaf);
+			workspace.setActiveLeaf(leaf, { focus: true });
 			leaf.setEphemeralState(eState);
 		} else {
 			const target = this.settings.openNoteIn;
@@ -512,7 +513,11 @@ export default class EpubPlusPlus extends Plugin {
 	async openNote(file: TFile, fromView?: EpubView): Promise<void> {
 		const { workspace } = this.app;
 		const open = workspace.getLeavesOfType('markdown').find((l) => (l.view as MarkdownView).file?.path === file.path);
-		if (open) return void workspace.revealLeaf(open);
+		if (open) {
+			await workspace.revealLeaf(open);
+			workspace.setActiveLeaf(open, { focus: true });
+			return;
+		}
 		const other = fromView && workspace.getLeavesOfType('markdown').find((l) => l.getRoot() === fromView.leaf.getRoot() && l.parent !== fromView.leaf.parent);
 		const leaf = Platform.isPhone || !fromView ? workspace.getLeaf('tab') : (other ?? workspace.createLeafBySplit(fromView.leaf, 'vertical'));
 		await leaf.openFile(file, { active: true });

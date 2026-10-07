@@ -710,3 +710,40 @@ body.epp-appearance-open .mobile-navbar {
 .epp-mobile .epp-segmented .epp-mode-button {
 	padding: 8px 4px;
 }
+
+/* ---------- Collapsible highlight groups ---------- */
+.epp-hl-group.is-clickable {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	cursor: pointer;
+	user-select: none;
+}
+.epp-hl-group.is-clickable:hover {
+	color: var(--text-normal);
+}
+.epp-hl-group-chevron {
+	display: flex;
+	transition: transform 120ms ease;
+}
+.epp-hl-group-chevron svg {
+	width: 14px;
+	height: 14px;
+}
+.epp-hl-group.is-collapsed .epp-hl-group-chevron {
+	transform: rotate(-90deg);
+}
+.epp-hl-group-count {
+	margin-inline-start: auto;
+	color: var(--text-faint);
+	font-weight: normal;
+}
+.epp-hl-group-row .epp-hl-collapse-all {
+	margin-inline-start: auto;
+}
+.epp-hl-group-row select {
+	margin-inline-start: auto;
+}
+.epp-hl-group-row select + .epp-hl-collapse-all {
+	margin-inline-start: 0;
+}
