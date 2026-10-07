@@ -28,7 +28,7 @@ The repo has two packages:
 - **Live highlights.** Rendered with the CSS Custom Highlight API, so the DOM is never mutated and CFIs stay valid. They update as notes change.
 - **Highlight actions.**
   - Click a highlight to open the source note at that line.
-  - Right-click it for *Change color* (rewrites `&color=` in the note, plus a surrounding `> [!quote|color]` callout header), *Open*, and *Copy link*.
+  - Right-click it for *Change color* (rewrites `&color=` in the note, plus a surrounding `> [!quote|color]` callout header), *Open*, *Copy link*, and *Delete highlight* (removes the link, with its callout and comment, from the note; asks first only when there's a comment, and Shift-click skips the question).
 - **Copy menu on any text.** Right-click a selection to get *Link Only*, *Text Only* and your copy formats (*As Callout*, *As Quote*, …), with the *Copy | Insert | Both* row on top when the book has an annotation file, or right-click without a selection to target the paragraph under the pointer.
   - Tapping a colored item uses your previous color; its arrow opens a color picker.
   - Formats are templates (`{{text}}`, `{{link}}`, `{{color}}`, `{{chapter}}`, …), and multi-line values keep their `> ` prefix.

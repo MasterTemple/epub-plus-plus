@@ -9,7 +9,7 @@ const opt = (k: string) => {
 	const i = args.indexOf(k);
 	return i === -1 ? undefined : args[i + 1];
 };
-const port = opt('--port') ?? '9333';
+const port = opt('--port') ?? process.env.EPP_CDP_PORT ?? '9333';
 const list = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()) as any[];
 const title = opt('--title');
 const page = title

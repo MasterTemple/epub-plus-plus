@@ -96,3 +96,44 @@ export function setComment(lines: string[], linkLine: number, comment: string, c
 	out.splice(l.start + 1, body.length, ...body, '>', ...asQuote(text));
 	return out;
 }
+
+const CALLOUT_HEADER_REST = /^\s*>\s*(\[![^\]]*\][+-]?)?\s*$/;
+const ONLY_QUOTE_MARKERS = /^\s*(>\s*)*$/;
+
+/**
+ * Remove the highlight whose link is `data.slice(start, end)`:
+ * - the link is a callout/blockquote header (`> [!quote|c] link`): the whole block, with its quote and comment;
+ * - the link is alone on its line: that line;
+ * - otherwise just the link (and a ` (…)` around it, as "Text with link" writes it).
+ * Blank lines left doubled by removing a block are collapsed.
+ */
+export function removeHighlight(data: string, start: number, end: number): string {
+	const lines = data.split('\n');
+	const lineNo = data.slice(0, start).split('\n').length - 1;
+	const col = start - (data.lastIndexOf('\n', start - 1) + 1);
+	const line = lines[lineNo];
+	const len = Math.min(end - start, line.length - col);
+	const before = line.slice(0, col);
+	const after = line.slice(col + len);
+
+	const from = lineNo;
+	let to = lineNo;
+	if (QUOTE.test(line) && CALLOUT_HEADER_REST.test(before + after)) {
+		const l = commentLayout(lines, lineNo);
+		if (l.start === lineNo) to = l.end;
+	} else if (!ONLY_QUOTE_MARKERS.test(before + after)) {
+		const out = lines.slice();
+		if (before.endsWith(' (') && after.startsWith(')')) out[lineNo] = before.slice(0, -2) + after.slice(1);
+		else if (before.endsWith(' ') && (after === '' || /^[\s.,;:!?)]/.test(after))) out[lineNo] = before.slice(0, -1) + after;
+		else out[lineNo] = before + (before === '' || /\s$/.test(before) ? after.replace(/^ /, '') : after);
+		return out.join('\n');
+	}
+	const out = lines.slice();
+	out.splice(from, to - from + 1);
+	const blank = (i: number) => i < 0 || i >= out.length || !out[i].trim();
+	if (blank(from - 1) && blank(from)) {
+		if (from < out.length) out.splice(from, 1);
+		else if (from > 0) out.splice(from - 1, 1);
+	}
+	return out.join('\n');
+}

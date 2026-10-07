@@ -50,10 +50,10 @@ bun run demo                      # :3737 core reader; `bun run test:browser` = 
 ## Testing in real Obsidian (headless, isolated)
 
 ```sh
-scripts/obsidian-headless.sh mobile      # or desktop; own profile, CDP on :9333; `… stop` to quit
+scripts/obsidian-headless.sh mobile      # or desktop; own profile, CDP on :9333 (`EPP_CDP_PORT=…` for all three scripts; it refuses a port in use); `… stop` to quit
 bun run build && bun scripts/cdp.ts --file scripts/obsidian-reload.js       # reload plugin after a build
 bun scripts/cdp.ts --eval "…js…" [--shot out.png] [--logs ms] [--throttle 6] [--title Settings]
-bun scripts/cdp-input.ts --tap x,y | --dbltap x,y | --hold x,y | --swipe x1,y1,x2,y2 | --drag … | --hover x,y,mods | --rightclick x,y | --key ctrl+c  [--eval "…"]
+bun scripts/cdp-input.ts --click x,y[,mods] | --tap x,y | --dbltap x,y | --hold x,y | --swipe x1,y1,x2,y2 | --drag … | --hover x,y,mods | --rightclick x,y | --key ctrl+c  [--eval "…"]
 ```
 
 - **Page scripts:** wrap them in one async IIFE and prepend `scripts/obsidian-helpers.js` (`getView()`, `reloadPlugin()`, `sleep`). Top-level `const`s persist between evaluations.

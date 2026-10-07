@@ -93,3 +93,47 @@ class CommentModal extends Modal {
 		this.contentEl.empty();
 	}
 }
+
+/** Ask before deleting a highlight that has a comment. Resolves to true to delete. */
+export function confirmDeleteHighlight(app: App, comment: string): Promise<boolean> {
+	return new Promise((resolve) => new ConfirmDeleteModal(app, comment, resolve).open());
+}
+
+class ConfirmDeleteModal extends Modal {
+	private result = false;
+
+	constructor(
+		app: App,
+		private comment: string,
+		private resolve: (v: boolean) => void,
+	) {
+		super(app);
+	}
+
+	override onOpen(): void {
+		this.titleEl.setText('Delete highlight?');
+		const { contentEl } = this;
+		contentEl.createEl('p', { text: 'Its comment will be deleted too:' });
+		contentEl.createEl('blockquote', {
+			cls: 'epp-comment-quote',
+			text: this.comment.length > 400 ? `${this.comment.slice(0, 400)}…` : this.comment,
+		});
+		if (!Platform.isMobile) contentEl.createEl('p', { cls: 'setting-item-description', text: 'Tip: Shift-click "Delete highlight" to skip this question.' });
+		new Setting(contentEl)
+			.addButton((b) => b.setButtonText('Cancel').onClick(() => this.close()))
+			.addButton((b) =>
+				b
+					.setButtonText('Delete')
+					.setWarning()
+					.onClick(() => {
+						this.result = true;
+						this.close();
+					}),
+			);
+	}
+
+	override onClose(): void {
+		this.contentEl.empty();
+		this.resolve(this.result);
+	}
+}

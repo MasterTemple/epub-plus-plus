@@ -16,8 +16,8 @@ import { HighlightIndex, resolveEpub, type HighlightEntry } from './highlight-in
 import { formatLink, linkAt, renderTemplate, setCalloutColor, setLinkColor } from './link-utils';
 import { COMMENT_TEMPLATE, DEFAULT_SETTINGS, needsComment, newFormatId, syncMenus, type AppearancePlatform, type CopyAction, type CopyFormat, type EppSettings, type OpenTarget } from './settings';
 import { Annotations } from './annotations';
-import { askForComment } from './comment-modal';
-import { setComment } from './comment-utils';
+import { askForComment, confirmDeleteHighlight } from './comment-modal';
+import { getComment, removeHighlight, setComment } from './comment-utils';
 import { registerEpubEmbeds } from './embed';
 import { EppSettingTab } from './setting-tab';
 import { EpubView, VIEW_TYPE_EPUB } from './view';
@@ -531,6 +531,30 @@ export default class EpubPlusPlus extends Plugin {
 		if (failed) new Notice('EPUB++: could not find the link in the note (it may have changed).');
 	}
 
+	/**
+	 * Delete a highlight: its link (with the callout around it, and its comment) from the note.
+	 * Asks first when it has a comment, unless `force`.
+	 */
+	async deleteHighlight(entry: HighlightEntry, force = false): Promise<void> {
+		const file = this.app.vault.getFileByPath(entry.sourcePath);
+		if (!file) return;
+		const data = await this.app.vault.read(file);
+		const at = findLink(data, entry);
+		if (at === -1) return void new Notice('EPUB++: could not find the link in the note (it may have changed).');
+		const comment = getComment(data.split('\n'), data.slice(0, at).split('\n').length - 1);
+		if (comment && !force && !(await confirmDeleteHighlight(this.app, comment))) return;
+		let failed = false;
+		await this.app.vault.process(file, (d) => {
+			const start = findLink(d, entry);
+			if (start === -1) {
+				failed = true;
+				return d;
+			}
+			return removeHighlight(d, start, start + entry.original.length);
+		});
+		if (failed) new Notice('EPUB++: could not find the link in the note (it may have changed).');
+	}
+
 	/** Rewrite the `&color=` parameter (and enclosing callout color) of a highlight's link in its note. */
 	async setHighlightColor(entry: HighlightEntry, color: string | null): Promise<void> {
 		const file = this.app.vault.getFileByPath(entry.sourcePath);
@@ -813,3 +837,9 @@ function toRgb(color: string): string | null {
 }
 
 export type { HighlightEntry };
+
+/** Offset of a highlight's link in its note's current text (at its indexed position, else anywhere), or -1. */
+function findLink(data: string, entry: HighlightEntry): number {
+	const { start, end } = entry.position;
+	return data.slice(start.offset, end.offset) === entry.original ? start.offset : data.indexOf(entry.original);
+}

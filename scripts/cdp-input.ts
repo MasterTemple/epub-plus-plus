@@ -1,13 +1,13 @@
 /**
  * Send real mouse input through CDP (Input.dispatchMouseEvent), then print an expression's value.
- *   bun scripts/cdp-input.ts --port 9333 --dblclick x,y | --drag x1,y1,x2,y2 [--eval "js"]
+ *   bun scripts/cdp-input.ts --port 9333 --click x,y[,mods] | --dblclick x,y | --drag x1,y1,x2,y2 [--eval "js"]
  */
 const args = process.argv.slice(2);
 const opt = (k: string) => {
 	const i = args.indexOf(k);
 	return i === -1 ? undefined : args[i + 1];
 };
-const list = (await (await fetch(`http://127.0.0.1:${opt('--port') ?? '9333'}/json`)).json()) as any[];
+const list = (await (await fetch(`http://127.0.0.1:${opt('--port') ?? process.env.EPP_CDP_PORT ?? '9333'}/json`)).json()) as any[];
 const page = list.find((t) => t.type === 'page' && t.url.startsWith('app://')) ?? list.find((t) => t.type === 'page');
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((r) => (ws.onopen = r));
@@ -25,6 +25,13 @@ const send = (method: string, params: object = {}) =>
 const mouse = (type: string, x: number, y: number, clickCount = 1, button = 'left') =>
 	send('Input.dispatchMouseEvent', { type, x, y, button, clickCount, buttons: type === 'mouseReleased' ? 0 : 1 });
 
+const click = opt('--click'); // x,y[,modifiers] (CDP bits: 1 alt, 2 ctrl, 4 meta, 8 shift)
+if (click) {
+	const [x, y, mods] = click.split(',').map(Number);
+	await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, modifiers: mods || 0, buttons: 0 });
+	await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1, modifiers: mods || 0 });
+	await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1, modifiers: mods || 0 });
+}
 const dbl = opt('--dblclick');
 if (dbl) {
 	const [x, y] = dbl.split(',').map(Number);

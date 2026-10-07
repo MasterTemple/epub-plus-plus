@@ -895,6 +895,16 @@ export class EpubView extends FileView {
 								new Notice('Copied link to clipboard');
 							}),
 					);
+				else if (id === 'delete')
+					menu.addItem((i) =>
+						i
+							.setTitle('Delete highlight')
+							.setIcon('trash-2')
+							.setWarning(true)
+							.setSection(section)
+							// Shift-click deletes without asking, even when the highlight has a comment.
+							.onClick((evt) => this.plugin.deleteHighlight(entry, evt.shiftKey)),
+					);
 			}
 		}
 	}

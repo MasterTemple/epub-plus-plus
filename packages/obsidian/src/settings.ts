@@ -149,6 +149,7 @@ export const HIGHLIGHT_MENU_LABELS: Record<string, string> = {
 	color: 'Change color',
 	comment: 'Add / edit comment',
 	'copy-link': 'Copy link',
+	delete: 'Delete highlight',
 };
 
 export const DEFAULT_SETTINGS: EppSettings = {
