@@ -102,13 +102,17 @@ bun run demo            # http://localhost:3737 (core reader without Obsidian)
 bun run test:browser    # with the demo running: CFI/text-fragment round trips, TOC, search, scaling
 ```
 
-`test-vault/` is an Obsidian vault whose `.obsidian/plugins/epub-plus-plus` is a symlink to `packages/obsidian/dist`. You can open it in Obsidian, or drive an isolated headless instance:
+`test-vault/` is an Obsidian vault whose `.obsidian/plugins/epub-plus-plus` is a symlink to `packages/obsidian/dist`. Open it in Obsidian, or drive an isolated headless instance (it never touches your running Obsidian):
 
 ```sh
-electron43 /usr/lib/obsidian/app.asar --user-data-dir=/tmp/obs --ozone-platform=headless --remote-debugging-port=9333
-bun scripts/cdp.ts --port 9333 --file scripts/obsidian-reload.js   # reload the plugin after a build
-bun scripts/cdp.ts --port 9333 --eval "…" --shot shot.png
+scripts/obsidian-headless.sh mobile          # or desktop; CDP on :9333
+bun scripts/cdp.ts --file scripts/obsidian-reload.js           # reload the plugin after a build
+bun scripts/cdp.ts --eval "…" --shot shot.png
+bun scripts/cdp-input.ts --tap 200,400 --eval "…"              # real touch/mouse/key input
+scripts/obsidian-headless.sh stop
 ```
+
+See `CLAUDE.md` for architecture notes and pitfalls.
 
 ## Known limitations
 
