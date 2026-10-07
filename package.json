@@ -1,0 +1,23 @@
+{
+  "name": "epub-plus-plus",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "bun run --filter '@epub-pp/obsidian' build",
+    "dev": "bun run --filter '@epub-pp/obsidian' dev",
+    "test": "bun test",
+    "test:browser": "bun scripts/browser-test.ts http://localhost:3737/test",
+    "typecheck": "tsc -p packages/core --noEmit && tsc -p packages/obsidian --noEmit",
+    "demo": "bun demo/serve.ts",
+    "fixtures": "scripts/fetch-fixtures.sh",
+    "install-plugin": "scripts/install.sh"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.14.5",
+    "@types/bun": "^1.4.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,9 @@
+{
+	"id": "epub-plus-plus",
+	"name": "EPUB++",
+	"version": "0.1.0",
+	"minAppVersion": "1.5.0",
+	"description": "Read EPUBs in Obsidian with highlights backed by links in your notes (EPUB CFI or text fragments), table of contents, search and reading settings.",
+	"author": "Blake",
+	"isDesktopOnly": false
+}

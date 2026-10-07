@@ -1,0 +1,371 @@
+/* ---------- EPUB++ view layout ---------- */
+.epp-view.view-content {
+	container: epp-view / inline-size;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	position: relative;
+}
+.epp-toolbar {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	padding: var(--size-4-1) var(--size-4-2);
+	border-bottom: var(--border-width) solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	flex: 0 0 auto;
+	min-height: 36px;
+}
+.epp-toolbar-center {
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	align-items: baseline;
+	gap: var(--size-4-2);
+	justify-content: center;
+}
+.epp-toolbar-title {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+.epp-toolbar-progress {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+}
+.epp-palette {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	padding: 0 var(--size-4-1);
+}
+.epp-swatch,
+.epp-menu-swatch {
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	background: var(--swatch);
+	border: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+	flex: 0 0 auto;
+}
+.epp-menu-swatch {
+	display: inline-block;
+	vertical-align: -2px;
+	margin-inline-end: 8px;
+	cursor: inherit;
+}
+.epp-swatch.is-active {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+.epp-swatch-none {
+	background: linear-gradient(135deg, transparent 45%, var(--text-faint) 45% 55%, transparent 55%);
+}
+
+.epp-main {
+	position: relative;
+	flex: 1 1 auto;
+	min-height: 0;
+	display: flex;
+}
+.epp-reader-host {
+	flex: 1 1 auto;
+	min-width: 0;
+	min-height: 0;
+}
+.epp-error {
+	padding: var(--size-4-8);
+	color: var(--text-error);
+}
+
+/* ---------- Sidebar ---------- */
+.epp-sidebar {
+	display: none;
+	flex: 0 0 var(--epp-sidebar-width, 280px);
+	flex-direction: column;
+	min-height: 0;
+	border-inline-end: var(--border-width) solid var(--background-modifier-border);
+	background: var(--background-secondary);
+}
+.epp-sidebar-open .epp-sidebar {
+	display: flex;
+}
+.epp-sidebar-backdrop {
+	display: none;
+}
+.epp-sidebar-tabs {
+	display: flex;
+	gap: var(--size-4-1);
+	padding: var(--size-4-1) var(--size-4-2);
+	border-bottom: var(--border-width) solid var(--background-modifier-border);
+}
+.epp-sidebar-tab.is-active {
+	color: var(--interactive-accent);
+	background: var(--background-modifier-hover);
+}
+.epp-sidebar-close {
+	margin-inline-start: auto;
+}
+.epp-sidebar-body {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow: hidden;
+	display: flex;
+}
+.epp-panel {
+	display: none;
+	flex: 1 1 auto;
+	flex-direction: column;
+	overflow-y: auto;
+	padding: var(--size-4-2) var(--size-4-1);
+}
+.epp-panel.is-active {
+	display: flex;
+}
+.epp-empty {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	padding: var(--size-4-2);
+}
+
+/* TOC */
+.epp-toc-self {
+	font-size: var(--font-ui-small);
+	padding-block: 3px;
+	border-radius: var(--radius-s);
+	display: flex;
+	align-items: flex-start;
+}
+.epp-toc-self .tree-item-inner {
+	white-space: normal;
+}
+.epp-toc-self.is-active {
+	background: var(--background-modifier-active-hover);
+	color: var(--text-accent);
+}
+.epp-toc-self.is-disabled {
+	color: var(--text-faint);
+	cursor: default;
+}
+.epp-toc-item.is-collapsed > .tree-item-children {
+	display: none;
+}
+.epp-toc-item.is-collapsed > .tree-item-self .epp-toc-toggle svg {
+	transform: rotate(-90deg);
+}
+.epp-toc-toggle {
+	cursor: pointer;
+}
+
+/* Search */
+.epp-panel-search {
+	overflow: hidden;
+}
+.epp-search-row input {
+	width: 100%;
+}
+.epp-search-toggles {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	margin: var(--size-4-2) 0;
+}
+.epp-search-toggle {
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+	padding: 2px 6px;
+	border-radius: var(--radius-s);
+	border: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+	color: var(--text-muted);
+}
+.epp-search-toggle.is-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+.epp-search-nav {
+	margin-inline-start: auto;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+.epp-search-info {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	margin-inline-end: 4px;
+	font-variant-numeric: tabular-nums;
+}
+.epp-search-results {
+	flex: 1 1 auto;
+	overflow-y: auto;
+}
+.epp-search-group {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	font-weight: var(--font-semibold);
+	padding: var(--size-4-2) var(--size-4-1) 2px;
+	position: sticky;
+	top: 0;
+	background: var(--background-secondary);
+}
+.epp-search-result {
+	font-size: var(--font-ui-small);
+	padding: 4px var(--size-4-2);
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	line-height: 1.4;
+}
+.epp-search-result:hover {
+	background: var(--background-modifier-hover);
+}
+.epp-search-result.is-active {
+	background: var(--background-modifier-active-hover);
+}
+.epp-search-result mark {
+	background: var(--text-highlight-bg);
+	color: inherit;
+}
+
+/* Highlights list */
+.epp-hl-item {
+	border-inline-start: 4px solid var(--swatch);
+	padding: 6px 8px;
+	margin: 0 2px 8px;
+	border-radius: var(--radius-s);
+	background: var(--background-primary);
+	cursor: pointer;
+	font-size: var(--font-ui-small);
+}
+.epp-hl-item:hover {
+	background: var(--background-modifier-hover);
+}
+.epp-hl-meta {
+	margin-top: 4px;
+	font-size: var(--font-ui-smaller);
+}
+.epp-hl-note {
+	color: var(--text-accent);
+}
+
+/* ---------- Appearance popover ---------- */
+.epp-appearance {
+	display: none;
+	position: absolute;
+	top: var(--size-4-2);
+	right: var(--size-4-2);
+	z-index: var(--layer-popover);
+	width: min(420px, calc(100% - 2 * var(--size-4-2)));
+	max-height: calc(100% - 2 * var(--size-4-2));
+	overflow-y: auto;
+	background: var(--background-primary);
+	border: var(--border-width) solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	box-shadow: var(--shadow-l);
+	padding: var(--size-4-2) var(--size-4-4);
+}
+.epp-appearance.is-open {
+	display: block;
+}
+.epp-appearance-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+.epp-appearance-title {
+	font-weight: var(--font-semibold);
+}
+.epp-appearance .setting-item {
+	padding-block: var(--size-4-2);
+}
+.epp-number {
+	width: 5em;
+}
+.epp-template {
+	font-family: var(--font-monospace);
+	min-width: 24em;
+}
+
+/* ---------- Selection bar (mobile) ---------- */
+.epp-selection-bar {
+	display: none;
+	position: absolute;
+	/* top: Obsidian mobile's floating navbar covers the bottom edge */
+	left: 50%;
+	top: var(--size-4-2);
+	transform: translateX(-50%);
+	z-index: var(--layer-popover);
+	gap: var(--size-4-1);
+	padding: var(--size-4-1);
+	background: var(--background-primary);
+	border: var(--border-width) solid var(--background-modifier-border);
+	border-radius: var(--radius-l);
+	box-shadow: var(--shadow-l);
+}
+.epp-selection-bar.is-visible {
+	display: flex;
+}
+.epp-selection-bar .clickable-icon {
+	gap: 6px;
+	padding: 6px 10px;
+	font-size: var(--font-ui-small);
+}
+
+/* ---------- Mobile layout / narrow panes: sidebar becomes a drawer ---------- */
+.epp-mobile .epp-toolbar {
+	padding: 2px var(--size-4-1);
+}
+.epp-mobile .epp-sidebar {
+	position: absolute;
+	inset: 0 auto 0 0;
+	width: min(88%, 360px);
+	z-index: calc(var(--layer-popover) - 1);
+	box-shadow: var(--shadow-l);
+}
+.epp-mobile.epp-view .epp-sidebar-open .epp-sidebar-backdrop {
+	display: block;
+	position: absolute;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.3);
+	z-index: calc(var(--layer-popover) - 2);
+}
+@container epp-view (max-width: 640px) {
+	.epp-sidebar {
+		position: absolute;
+		inset: 0 auto 0 0;
+		width: min(88%, 340px);
+		z-index: calc(var(--layer-popover) - 1);
+		box-shadow: var(--shadow-l);
+	}
+	.epp-sidebar-open .epp-sidebar-backdrop {
+		display: block;
+		position: absolute;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.25);
+		z-index: calc(var(--layer-popover) - 2);
+	}
+	.epp-toolbar-progress {
+		display: none;
+	}
+}
+.epp-phone .epp-palette {
+	display: none;
+}
+.epp-phone .epp-toolbar-title {
+	font-size: var(--font-ui-smaller);
+}
+.epp-phone .epp-appearance {
+	top: auto;
+	bottom: 0;
+	right: 0;
+	left: 0;
+	width: 100%;
+	max-height: 70%;
+	border-radius: var(--radius-l) var(--radius-l) 0 0;
+	padding-bottom: calc(var(--size-4-4) + env(safe-area-inset-bottom, 0px));
+}

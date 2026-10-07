@@ -1,0 +1,17 @@
+{
+  "name": "@epub-pp/obsidian",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun esbuild.config.ts production",
+    "dev": "bun esbuild.config.ts"
+  },
+  "dependencies": {
+    "@epub-pp/core": "workspace:*"
+  },
+  "devDependencies": {
+    "monkey-around": "^3.0.0",
+    "obsidian": "^1.13.1"
+  }
+}

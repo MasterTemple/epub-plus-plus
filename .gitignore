@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+fixtures/*.epub
+test-vault/Books/*.epub
+test-vault/.obsidian/workspace*.json
+test-vault/.obsidian/plugins/epub-plus-plus/data.json
