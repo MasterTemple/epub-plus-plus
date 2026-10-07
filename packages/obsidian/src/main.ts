@@ -1,4 +1,4 @@
-import { formatLocator, type ReaderSettings, type SelectionInfo } from '@epub-pp/core';
+import { EpubBook, formatLocator, type ReaderSettings, type SelectionInfo } from '@epub-pp/core';
 import { around } from 'monkey-around';
 import {
 	MarkdownView,
@@ -14,11 +14,14 @@ import {
 } from 'obsidian';
 import { HighlightIndex, resolveEpub, type HighlightEntry } from './highlight-index';
 import { formatLink, renderTemplate, setCalloutColor, setLinkColor } from './link-utils';
-import { DEFAULT_SETTINGS, type CopyFormat, type EppSettings, type OpenTarget } from './settings';
+import { DEFAULT_SETTINGS, newFormatId, type CopyAction, type CopyFormat, type EppSettings, type OpenTarget } from './settings';
+import { registerEpubEmbeds } from './embed';
 import { EppSettingTab } from './setting-tab';
 import { EpubView, VIEW_TYPE_EPUB } from './view';
 
 import { HOVER_SOURCE } from './constants';
+
+export type CopyTarget = CopyFormat | 'link' | 'alt-link' | 'text';
 
 export default class EpubPlusPlus extends Plugin {
 	declare settings: EppSettings;
@@ -39,10 +42,52 @@ export default class EpubPlusPlus extends Plugin {
 		this.registerCommands();
 		this.updateCalloutStyles();
 		this.registerBacklinkHover();
+		this.updatePreviews();
+	}
+
+	/** Register or unregister the EPUB embed (used by `![[book.epub#…]]` and link hover previews). */
+	updatePreviews(): void {
+		this.unregisterEmbeds?.();
+		this.unregisterEmbeds = this.settings.previews ? registerEpubEmbeds(this) : null;
+	}
+	private unregisterEmbeds: (() => void) | null = null;
+
+	/** Flash options for jumps, from settings (null when disabled). */
+	jumpFlash(): { duration: number; color: string } | false {
+		const s = this.settings;
+		return s.jumpHighlight ? { duration: s.jumpHighlightDuration, color: s.jumpHighlightColor } : false;
+	}
+
+	// --------------------------------------------------------------------------------------------
+	// Book cache (previews open the same books repeatedly)
+	// --------------------------------------------------------------------------------------------
+
+	private books = new Map<string, { mtime: number; book: Promise<EpubBook> }>();
+
+	getBook(file: TFile): Promise<EpubBook> {
+		const hit = this.books.get(file.path);
+		if (hit && hit.mtime === file.stat.mtime) {
+			// refresh LRU order
+			this.books.delete(file.path);
+			this.books.set(file.path, hit);
+			return hit.book;
+		}
+		const book = this.app.vault.readBinary(file).then((data) => EpubBook.open(data));
+		this.books.set(file.path, { mtime: file.stat.mtime, book });
+		while (this.books.size > 3) {
+			const [oldest, entry] = this.books.entries().next().value!;
+			this.books.delete(oldest);
+			// Let previews that still use it finish; blob URLs are revoked a bit later.
+			entry.book.then((b) => window.setTimeout(() => b.destroy(), 60_000)).catch(() => {});
+		}
+		book.catch(() => this.books.delete(file.path));
+		return book;
 	}
 
 	override onunload(): void {
 		this.calloutStyle?.remove();
+		this.unregisterEmbeds?.();
+		for (const { book } of this.books.values()) book.then((b) => b.destroy()).catch(() => {});
 	}
 
 	// --------------------------------------------------------------------------------------------
@@ -51,7 +96,10 @@ export default class EpubPlusPlus extends Plugin {
 
 	async loadSettings(): Promise<void> {
 		const data = (await this.loadData()) ?? {};
-		this.settings = { ...DEFAULT_SETTINGS, ...data, reader: { ...DEFAULT_SETTINGS.reader, ...(data.reader ?? {}) } };
+		const defaults = structuredClone(DEFAULT_SETTINGS);
+		this.settings = { ...defaults, ...data, reader: { ...defaults.reader, ...(data.reader ?? {}) } };
+		// Formats saved before format ids existed.
+		for (const f of this.settings.copyFormats) f.id ||= newFormatId();
 	}
 
 	async saveSettings(): Promise<void> {
@@ -284,15 +332,30 @@ export default class EpubPlusPlus extends Plugin {
 		};
 	}
 
-	async copy(view: EpubView, info: SelectionInfo, what: CopyFormat | 'link' | 'alt-link' | 'text', color: string | null): Promise<void> {
-		let text: string;
-		if (what === 'text') text = info.text;
-		else {
-			const link = this.buildLink(view, info, color, what === 'alt-link');
-			text = typeof what === 'string' ? link : renderTemplate(what.template, this.templateVars(view, info, color, link));
-		}
-		await navigator.clipboard.writeText(text);
-		new Notice(`Copied ${typeof what === 'string' ? (what === 'text' ? 'text' : 'link') : what.name.toLowerCase()} to clipboard`);
+	/** Resolve a copy action (`text`, `link`, `alt-link`, `format:<id>`) to what it copies. */
+	resolveCopyAction(action: CopyAction): CopyTarget | null {
+		if (action === 'text' || action === 'link' || action === 'alt-link') return action;
+		const id = action.slice('format:'.length);
+		return this.settings.copyFormats.find((f) => f.id === id) ?? null;
+	}
+
+	/** The clipboard text for a selection (synchronous, so it can run inside a `copy` event). */
+	renderCopy(view: EpubView, info: SelectionInfo, what: CopyTarget, color: string | null): string {
+		if (what === 'text') return info.text;
+		const link = this.buildLink(view, info, color, what === 'alt-link');
+		return typeof what === 'string' ? link : renderTemplate(what.template, this.templateVars(view, info, color, link));
+	}
+
+	copyLabel(what: CopyTarget): string {
+		if (what === 'text') return 'text';
+		if (what === 'link') return 'link';
+		if (what === 'alt-link') return this.settings.linkType === 'cfi' ? 'text-fragment link' : 'CFI link';
+		return what.name.toLowerCase();
+	}
+
+	async copy(view: EpubView, info: SelectionInfo, what: CopyTarget, color: string | null): Promise<void> {
+		await navigator.clipboard.writeText(this.renderCopy(view, info, what, color));
+		new Notice(`Copied ${this.copyLabel(what)} to clipboard`);
 	}
 
 	// --------------------------------------------------------------------------------------------
@@ -320,32 +383,38 @@ export default class EpubPlusPlus extends Plugin {
 				this.updateReaderSettings({ theme: order[(i + 1) % order.length] });
 			}),
 		});
-		this.addCommand({
-			id: 'copy-link',
-			name: 'Copy link to selection',
-			checkCallback: (checking) => {
-				const v = this.app.workspace.getActiveViewOfType(EpubView);
-				const sel = v?.reader?.getSelection();
-				if (!v || !sel) return false;
-				if (!checking) this.copy(v, sel, 'link', v.activeColor);
-				return true;
-			},
-		});
-		for (const [i] of this.settings.copyFormats.entries()) {
+		const copyCommand = (id: string, name: string, target: () => CopyTarget | null) =>
 			this.addCommand({
-				id: `copy-format-${i + 1}`,
-				name: `Copy selection with format #${i + 1}`,
+				id,
+				name,
 				checkCallback: (checking) => {
 					const v = this.app.workspace.getActiveViewOfType(EpubView);
 					const sel = v?.reader?.getSelection();
-					const fmt = this.settings.copyFormats[i];
-					if (!v || !sel || !fmt) return false;
-					if (!checking) this.copy(v, sel, fmt, v.activeColor);
+					const what = target();
+					if (!v || !sel || !what) return false;
+					if (!checking) this.copy(v, sel, what, v.activeColor);
 					return true;
 				},
 			});
-		}
+		copyCommand('copy-text', 'Copy selection as text', () => 'text');
+		copyCommand('copy-link', 'Copy link to selection', () => 'link');
+		copyCommand('copy-alt-link', 'Copy alternate link to selection (CFI ↔ text fragment)', () => 'alt-link');
+		this.syncFormatCommands = () => {
+			const commands = (this.app as any).commands;
+			for (const id of this.formatCommandIds) commands?.removeCommand?.(`${this.manifest.id}:${id}`);
+			this.formatCommandIds = [];
+			for (const fmt of this.settings.copyFormats) {
+				const id = `copy-format-${fmt.id}`;
+				copyCommand(id, `Copy selection as ${fmt.name.toLowerCase()}`, () => this.settings.copyFormats.find((f) => f.id === fmt.id) ?? null);
+				this.formatCommandIds.push(id);
+			}
+		};
+		this.syncFormatCommands();
 	}
+
+	/** Re-register the per-format copy commands (after formats are added, renamed or removed). Hotkeys are kept by id. */
+	syncFormatCommands: () => void = () => {};
+	private formatCommandIds: string[] = [];
 
 	// --------------------------------------------------------------------------------------------
 	// Backlinks pane integration

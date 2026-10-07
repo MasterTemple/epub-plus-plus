@@ -1,5 +1,5 @@
 import { EpubBook, EpubReader, parseLocator, type HighlightSpec, type SelectionInfo, type TocItem } from '@epub-pp/core';
-import { FileView, Menu, Platform, Scope, TFile, setIcon, type MenuItem, type WorkspaceLeaf } from 'obsidian';
+import { FileView, Menu, Notice, Platform, Scope, TFile, setIcon, type MenuItem, type WorkspaceLeaf } from 'obsidian';
 import type { HighlightEntry } from './highlight-index';
 import type EpubPlusPlus from './main';
 import { HOVER_SOURCE, VIEW_TYPE_EPUB } from './constants';
@@ -87,6 +87,15 @@ export class EpubView extends FileView {
 			return () => this.plugin.index.offref(ref);
 		})();
 		this.registerEvent(this.app.workspace.on('css-change', () => this.reader?.updateSettings({})));
+		// Dragging the tab into another window moves our DOM into a different document: rebuild the
+		// reader there (highlights and ranges are per-window). Same-window moves are handled by core.
+		this.register(
+			this.contentEl.onWindowMigrated(() => {
+				if (this.file && this.reader) this.onLoadFile(this.file);
+			}),
+		);
+		// Ctrl/Cmd+C (and the system Copy command) inside the book uses the configured copy action.
+		this.registerDomEvent(this.contentEl, 'copy', (e: ClipboardEvent) => this.onCopy(e));
 	}
 
 	override async onOpen(): Promise<void> {}
@@ -122,6 +131,7 @@ export class EpubView extends FileView {
 				palette: this.plugin.paletteRecord(),
 				defaultColor: s.defaultColor,
 				highlightOpacity: s.highlightOpacity,
+				flash: { color: s.jumpHighlightColor, duration: s.jumpHighlightDuration },
 			});
 			this.book = book;
 			this.reader = reader;
@@ -184,7 +194,7 @@ export class EpubView extends FileView {
 		const loc = parseLocator(subpath);
 		const target = loc.cfi ?? loc.textFragment ?? loc.href;
 		if (!target) return false;
-		const ok = this.reader.goTo(target, { flash: flash && !!(loc.cfi || loc.textFragment) });
+		const ok = this.reader.goTo(target, { flash: flash && !!(loc.cfi || loc.textFragment) && this.plugin.jumpFlash() });
 		if (!ok) console.warn('[epub-pp] could not resolve', subpath);
 		return ok;
 	}
@@ -257,10 +267,27 @@ export class EpubView extends FileView {
 
 	refreshHighlights(): void {
 		if (!this.reader || !this.file) return;
-		const entries = this.plugin.index.get(this.file.path);
+		const all = this.plugin.index.get(this.file.path);
+		const entries = this.plugin.settings.noColor === 'none' ? all.filter((e) => e.color) : all;
 		const specs: HighlightSpec<HighlightEntry>[] = entries.map((e) => ({ id: e.id, locator: e.locator, color: e.color, data: e }));
 		this.reader.setHighlights(specs);
-		this.sidebar.setHighlights(entries);
+		this.sidebar.setHighlights(all);
+	}
+
+	private onCopy(e: ClipboardEvent): void {
+		const what = this.plugin.resolveCopyAction(this.plugin.settings.copyAction);
+		if (!what || what === 'text' || !e.clipboardData) return; // default browser copy
+		const sel = this.reader?.getSelection();
+		if (!sel) return;
+		e.clipboardData.setData('text/plain', this.plugin.renderCopy(this, sel, what, this.activeColor));
+		e.preventDefault();
+		new Notice(`Copied ${this.plugin.copyLabel(what)}`);
+	}
+
+	/** Re-apply jump-highlight settings to an open reader. */
+	applyFlashSettings(): void {
+		const s = this.plugin.settings;
+		this.reader?.setFlashDefaults({ color: s.jumpHighlightColor, duration: s.jumpHighlightDuration });
 	}
 
 	applyPalette(): void {

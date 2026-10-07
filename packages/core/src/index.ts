@@ -9,6 +9,7 @@ export { searchIndex, type SearchMatch, type SearchOptions } from './search/sear
 export {
 	EpubReader,
 	rangeText,
+	type FlashOptions,
 	type HighlightSpec,
 	type Location,
 	type ReaderOptions,

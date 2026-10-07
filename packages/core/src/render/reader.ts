@@ -74,6 +74,21 @@ export interface ReaderOptions {
 	cfiAssertions?: boolean;
 	/** Opacity (0..1) of highlight backgrounds. */
 	highlightOpacity?: number;
+	/** Default look of the temporary highlight shown after jumping to a passage. */
+	flash?: FlashOptions;
+	/** Render only these spine indices (e.g. for a lightweight preview). Default: all. */
+	spineItems?: number[];
+}
+
+export interface FlashOptions {
+	/** Total time on screen in ms, including the fade-out. */
+	duration?: number;
+	/** Fade-out time in ms at the end of `duration`. */
+	fade?: number;
+	/** Any CSS color. */
+	color?: string;
+	/** Peak opacity 0..1. */
+	opacity?: number;
 }
 
 interface RenderedSection {
@@ -92,6 +107,9 @@ let instanceCounter = 0;
 export class EpubReader extends Emitter<ReaderEvents> {
 	readonly shadow: ShadowRoot;
 	readonly scroller: HTMLElement;
+	/** The host's document/window (may be an Obsidian popout window, not the global one). */
+	readonly doc: Document;
+	readonly win: Window & typeof globalThis;
 	readonly content: HTMLElement;
 	private readonly id = ++instanceCounter;
 	private settings: ReaderSettings;
@@ -113,6 +131,14 @@ export class EpubReader extends Emitter<ReaderEvents> {
 	private destroyed = false;
 	private relocateTimer = 0;
 	private flashTimer = 0;
+	private flashRaf = 0;
+	private flashStyle: HTMLStyleElement;
+	private flashDefaults: Required<FlashOptions>;
+	private readonly spineFilter: Set<number> | null;
+	/** Reading position to restore when the host is re-attached or resized (DOM moves reset scrollTop). */
+	private anchor: Range | null = null;
+	private anchorPosition: 'top' | 'center' = 'top';
+	private hostSize = { w: 0, h: 0 };
 	private lastHover: string = '';
 
 	constructor(
@@ -121,34 +147,47 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		opts: ReaderOptions = {},
 	) {
 		super();
+		this.doc = host.ownerDocument;
+		this.win = (this.doc.defaultView ?? window) as Window & typeof globalThis;
 		this.settings = { ...DEFAULT_SETTINGS, ...opts.settings };
 		this.palette = opts.palette ?? { yellow: '#ffd000', red: '#ff5f5f', green: '#5fd068', blue: '#5fa8ff', purple: '#b07cff' };
 		this.defaultColor = opts.defaultColor ?? Object.keys(this.palette)[0] ?? 'yellow';
 		this.cfiAssertions = opts.cfiAssertions ?? false;
 		this.highlightOpacity = opts.highlightOpacity ?? 0.4;
+		this.flashDefaults = { duration: 1600, fade: 600, color: '#ffb000', opacity: 0.6, ...opts.flash };
+		this.spineFilter = opts.spineItems ? new Set(opts.spineItems) : null;
 
 		this.shadow = host.shadowRoot ?? host.attachShadow({ mode: 'open' });
 		this.shadow.replaceChildren();
-		const base = document.createElement('style');
+		const base = this.doc.createElement('style');
 		base.textContent = BASE_CSS;
-		this.highlightStyle = document.createElement('style');
-		this.scroller = document.createElement('div');
+		this.highlightStyle = this.doc.createElement('style');
+		this.scroller = this.doc.createElement('div');
 		this.scroller.className = 'epp-scroller';
 		this.scroller.tabIndex = 0;
-		this.content = document.createElement('div');
+		this.content = this.doc.createElement('div');
 		this.content.className = 'epp-content';
 		this.content.lang = book.metadata.language || '';
 		this.scroller.appendChild(this.content);
-		this.shadow.append(base, this.highlightStyle, this.scroller);
+		this.flashStyle = this.doc.createElement('style');
+		this.shadow.append(base, this.highlightStyle, this.flashStyle, this.scroller);
 		this.applySettings();
 		this.bindEvents();
+	}
+
+	private get registry(): HighlightRegistry | undefined {
+		return (this.win as any).CSS?.highlights;
+	}
+
+	private get HighlightCtor(): typeof Highlight | undefined {
+		return (this.win as any).Highlight;
 	}
 
 	// ---------------------------------------------------------------------------------------------
 	// Rendering
 	// ---------------------------------------------------------------------------------------------
 
-	/** Parse every spine item, rewrite CSS and mount the joined document. */
+	/** Parse every spine item, rewrite CSS and mount the joined this.doc. */
 	async render(): Promise<void> {
 		if (this.rendered) return;
 		const prefix = `epp${this.id}`;
@@ -161,6 +200,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		const prepared: PreparedSection[] = [];
 		let last = performance.now();
 		for (const item of this.book.spine) {
+			if (this.spineFilter && !this.spineFilter.has(item.index)) continue;
 			try {
 				prepared.push(prepareSection(this.book, item));
 			} catch (e) {
@@ -192,10 +232,10 @@ export class EpubReader extends Emitter<ReaderEvents> {
 			}
 		}
 
-		const frag = document.createDocumentFragment();
+		const frag = this.doc.createDocumentFragment();
 		for (const p of prepared) {
 			const ids = [...new Set(p.sheets.map((s) => sheetIds.get(s.key)!))];
-			const { wrapper, body } = buildSection(document, this.book, p, css, ids);
+			const { wrapper, body } = buildSection(this.doc, this.book, p, css, ids);
 			const sec: RenderedSection = { item: p.item, wrapper, body, bodyStep: p.bodyStep };
 			this.sections.push(sec);
 			this.sectionBySpine.set(p.item.index, sec);
@@ -209,15 +249,15 @@ export class EpubReader extends Emitter<ReaderEvents> {
 
 		const scoped = new Set([...usage].filter(([, n]) => n < prepared.length).map(([id]) => id));
 		const { css: publisherCss, fontFaces } = css.build(scoped);
-		const pubStyle = document.createElement('style');
+		const pubStyle = this.doc.createElement('style');
 		pubStyle.textContent = `@layer publisher {\n${publisherCss}\n}`;
 		this.shadow.insertBefore(pubStyle, this.highlightStyle);
 		if (fontFaces) {
-			// @font-face is ignored inside shadow roots, so fonts are registered on the document.
-			this.fontStyle = document.createElement('style');
+			// @font-face is ignored inside shadow roots, so fonts are registered on the this.doc.
+			this.fontStyle = this.doc.createElement('style');
 			this.fontStyle.setAttribute('data-epp-fonts', prefix);
 			this.fontStyle.textContent = fontFaces;
-			document.head.appendChild(this.fontStyle);
+			this.doc.head.appendChild(this.fontStyle);
 		}
 
 		this.content.appendChild(frag);
@@ -240,14 +280,14 @@ export class EpubReader extends Emitter<ReaderEvents> {
 
 	/** Apply new settings live (CSS variables only; no re-render). Keeps the reading position. */
 	updateSettings(patch: Partial<ReaderSettings>): void {
-		const loc = this.rendered ? this.currentAnchor() : null;
+		const loc = this.rendered ? (this.currentAnchor() ?? this.anchor) : null;
 		this.settings = { ...this.settings, ...patch };
 		this.applySettings();
-		if (loc) requestAnimationFrame(() => this.scrollToRange(loc, { flash: false, position: 'top' }));
+		if (loc) this.win.requestAnimationFrame(() => this.scrollToRange(loc, { flash: false, position: 'top' }));
 	}
 
 	private applySettings(): void {
-		const hostDark = document.body?.classList.contains('theme-dark') ?? matchMedia?.('(prefers-color-scheme: dark)').matches;
+		const hostDark = this.doc.body?.classList.contains('theme-dark') ?? this.win.matchMedia?.('(prefers-color-scheme: dark)').matches;
 		const vars = settingsToVars(this.settings, !!hostDark);
 		for (const [k, v] of Object.entries(vars)) {
 			if (v === null) this.host.style.removeProperty(k);
@@ -290,7 +330,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		if (!cfi) return null;
 		const start = this.resolveCfiPath(cfiStart(cfi), false);
 		if (!start) return null;
-		const range = document.createRange();
+		const range = this.doc.createRange();
 		range.setStart(start.container, start.offset);
 		const end = cfi.range ? this.resolveCfiPath(cfiEnd(cfi), true) : null;
 		if (end) range.setEnd(end.container, end.offset);
@@ -333,7 +373,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 			}
 			target = scope.querySelector(`[id="${CSS.escape(id)}"]`) ?? scope.querySelector(`a[name="${CSS.escape(id)}"]`);
 		}
-		const range = document.createRange();
+		const range = this.doc.createRange();
 		if (target) range.selectNode(target);
 		else if (sec) {
 			range.setStart(sec.body, 0);
@@ -403,17 +443,22 @@ export class EpubReader extends Emitter<ReaderEvents> {
 	// Navigation
 	// ---------------------------------------------------------------------------------------------
 
-	/** Jump to a locator or TOC item. Returns false when it could not be resolved. */
-	goTo(target: string | TocItem, opts: { flash?: boolean } = {}): boolean {
+	/**
+	 * Jump to a locator or TOC item. Returns false when it could not be resolved.
+	 * `flash`: briefly highlight the target (default: only for CFI / text-fragment ranges).
+	 */
+	goTo(target: string | TocItem, opts: { flash?: boolean | FlashOptions } = {}): boolean {
 		const range = typeof target === 'string' ? this.resolve(target) : target.href ? this.resolveHref(target.href) : null;
 		if (!range) return false;
-		const isPoint = range.collapsed || (typeof target !== 'string') || !/epubcfi|text=/.test(target);
+		const isPoint = range.collapsed || typeof target !== 'string' || !/epubcfi|text=/.test(target);
 		this.scrollToRange(range, { flash: opts.flash ?? !isPoint, position: isPoint ? 'top' : 'center' });
 		return true;
 	}
 
-	scrollToRange(range: Range, opts: { flash?: boolean; position?: 'top' | 'center' } = {}): void {
+	scrollToRange(range: Range, opts: { flash?: boolean | FlashOptions; position?: 'top' | 'center' } = {}): void {
 		const position = opts.position ?? 'center';
+		this.anchor = range;
+		this.anchorPosition = position;
 		const doScroll = () => {
 			const rect = rangeRect(range);
 			if (!rect) return;
@@ -423,18 +468,45 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		};
 		doScroll();
 		// content-visibility placeholders around the target get laid out after the jump; correct for drift.
-		requestAnimationFrame(() => {
+		this.win.requestAnimationFrame(() => {
 			doScroll();
-			requestAnimationFrame(doScroll);
+			this.win.requestAnimationFrame(doScroll);
 		});
-		if (opts.flash) this.flash(range);
+		if (opts.flash) this.flash(range, typeof opts.flash === 'object' ? opts.flash : {});
 	}
 
-	flash(range: Range, ms = 1600): void {
+	/** Temporarily highlight a range (drawn above regular highlights), fading out at the end. */
+	flash(range: Range, opts: FlashOptions = {}): void {
+		if (!this.HighlightCtor) return;
+		const o = { ...this.flashDefaults, ...opts };
 		const name = this.hlName('flash');
-		CSS.highlights?.set(name, new Highlight(range));
-		window.clearTimeout(this.flashTimer);
-		this.flashTimer = window.setTimeout(() => CSS.highlights?.delete(name), ms);
+		const h = new this.HighlightCtor!(range);
+		h.priority = 10;
+		this.registry!.set(name, h);
+		this.win.clearTimeout(this.flashTimer);
+		this.win.cancelAnimationFrame(this.flashRaf);
+		const paint = (alpha: number) => {
+			this.flashStyle.textContent = `::highlight(${name}) { background-color: color-mix(in srgb, ${o.color} ${Math.round(alpha * 100)}%, transparent); }`;
+		};
+		paint(o.opacity);
+		const fade = Math.min(o.fade, o.duration);
+		this.flashTimer = this.win.setTimeout(() => {
+			const start = performance.now();
+			const step = (now: number) => {
+				const t = Math.min(1, (now - start) / Math.max(1, fade));
+				paint(o.opacity * (1 - t));
+				if (t < 1) this.flashRaf = this.win.requestAnimationFrame(step);
+				else {
+					this.registry!.delete(name);
+					this.flashStyle.textContent = '';
+				}
+			};
+			this.flashRaf = this.win.requestAnimationFrame(step);
+		}, Math.max(0, o.duration - fade));
+	}
+
+	setFlashDefaults(opts: FlashOptions): void {
+		this.flashDefaults = { ...this.flashDefaults, ...opts };
 	}
 
 	/** Current reading position (first visible block). */
@@ -486,7 +558,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 			if (r.top >= top - 2 || r.height < this.scroller.clientHeight / 2) break;
 			parent = k;
 		}
-		const range = document.createRange();
+		const range = this.doc.createRange();
 		if (found) range.setStartBefore(found);
 		else range.setStart(sec.body, 0);
 		range.collapse(true);
@@ -526,13 +598,13 @@ export class EpubReader extends Emitter<ReaderEvents> {
 	// ---------------------------------------------------------------------------------------------
 
 	getSelectionRange(): Range | null {
-		const sel: Selection | null = (this.shadow as any).getSelection?.() ?? document.getSelection();
+		const sel: Selection | null = (this.shadow as any).getSelection?.() ?? this.doc.getSelection();
 		if (!sel || sel.rangeCount === 0) return null;
 		let range: Range | null = null;
 		const composed = (sel as any).getComposedRanges?.({ shadowRoots: [this.shadow] }) ?? (sel as any).getComposedRanges?.(this.shadow);
 		if (composed?.length) {
 			const sr = composed[0] as StaticRange;
-			range = document.createRange();
+			range = this.doc.createRange();
 			range.setStart(sr.startContainer, sr.startOffset);
 			range.setEnd(sr.endContainer, sr.endOffset);
 		} else range = sel.getRangeAt(0);
@@ -562,7 +634,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 	}
 
 	clearSelection(): void {
-		((this.shadow as any).getSelection?.() ?? document.getSelection())?.removeAllRanges();
+		((this.shadow as any).getSelection?.() ?? this.doc.getSelection())?.removeAllRanges();
 	}
 
 	// ---------------------------------------------------------------------------------------------
@@ -597,7 +669,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 	}
 
 	private refreshHighlights(): void {
-		if (!this.rendered || typeof Highlight === 'undefined') return;
+		if (!this.rendered || !this.HighlightCtor) return;
 		const groups = new Map<string, { css: string; ranges: Range[] }>();
 		for (const h of this.highlights) {
 			if (!h.range) h.range = this.cachedRange(h.spec.locator);
@@ -607,11 +679,11 @@ export class EpubReader extends Emitter<ReaderEvents> {
 			if (!g) groups.set(key, (g = { css, ranges: [] }));
 			g.ranges.push(h.range);
 		}
-		for (const name of this.highlightNames) CSS.highlights.delete(name);
+		for (const name of this.highlightNames) this.registry!.delete(name);
 		this.highlightNames.clear();
 		for (const [key, g] of groups) {
 			const name = this.hlName(key);
-			CSS.highlights.set(name, new Highlight(...g.ranges));
+			this.registry!.set(name, new this.HighlightCtor!(...g.ranges));
 			this.highlightNames.add(name);
 		}
 		this.updateHighlightStyles(groups);
@@ -620,7 +692,6 @@ export class EpubReader extends Emitter<ReaderEvents> {
 	private updateHighlightStyles(groups?: Map<string, { css: string }>): void {
 		const pct = Math.round(this.highlightOpacity * 100);
 		const rules = [
-			`::highlight(${this.hlName('flash')}) { background-color: rgba(255, 200, 0, 0.6); }`,
 			`::highlight(${this.hlName('search')}) { background-color: rgba(255, 170, 0, 0.35); }`,
 			`::highlight(${this.hlName('search-current')}) { background-color: rgba(255, 120, 0, 0.8); color: black; }`,
 			`::highlight(${this.hlName('hover')}) { text-decoration: underline 2px; text-decoration-color: currentColor; }`,
@@ -650,8 +721,8 @@ export class EpubReader extends Emitter<ReaderEvents> {
 	setHoveredHighlights(ids: string[]): void {
 		const name = this.hlName('hover');
 		const ranges = this.highlights.filter((h) => h.range && ids.includes(h.spec.id)).map((h) => h.range!);
-		if (ranges.length) CSS.highlights?.set(name, new Highlight(...ranges));
-		else CSS.highlights?.delete(name);
+		if (ranges.length) this.registry?.set(name, new this.HighlightCtor!(...ranges));
+		else this.registry?.delete(name);
 	}
 
 	/** Range for a highlight spec (resolved). */
@@ -680,20 +751,20 @@ export class EpubReader extends Emitter<ReaderEvents> {
 
 	/** Paint search matches; `current` is emphasized and scrolled into view. */
 	showSearchResults(results: SearchResult[], current = -1): void {
-		if (typeof Highlight === 'undefined') return;
+		if (!this.HighlightCtor) return;
 		const all = this.hlName('search');
 		const cur = this.hlName('search-current');
 		if (!results.length) {
-			CSS.highlights.delete(all);
-			CSS.highlights.delete(cur);
+			this.registry!.delete(all);
+			this.registry!.delete(cur);
 			return;
 		}
-		CSS.highlights.set(all, new Highlight(...results.map((r) => r.range())));
+		this.registry!.set(all, new this.HighlightCtor!(...results.map((r) => r.range())));
 		const c = results[current];
 		if (c) {
-			CSS.highlights.set(cur, new Highlight(c.range()));
+			this.registry!.set(cur, new this.HighlightCtor!(c.range()));
 			this.scrollToRange(c.range(), { flash: false, position: 'center' });
-		} else CSS.highlights.delete(cur);
+		} else this.registry!.delete(cur);
 	}
 
 	// ---------------------------------------------------------------------------------------------
@@ -701,6 +772,24 @@ export class EpubReader extends Emitter<ReaderEvents> {
 	// ---------------------------------------------------------------------------------------------
 
 	private bindEvents(): void {
+		// Moving the host in the DOM (e.g. dragging a tab to another pane) or hiding it resets scrollTop,
+		// and width changes reflow the text: restore the reading anchor in both cases.
+		if (typeof ResizeObserver !== 'undefined') {
+			const ro = new ResizeObserver(() => {
+				const w = this.host.clientWidth;
+				const h = this.host.clientHeight;
+				const prev = this.hostSize;
+				this.hostSize = { w, h };
+				if (!w || !h || !this.rendered || !this.anchor) return;
+				if (!prev.w || !prev.h || prev.w !== w) {
+					this.win.clearTimeout(this.relocateTimer);
+					this.scrollToRange(this.anchor, { position: this.anchorPosition });
+				}
+			});
+			ro.observe(this.host);
+			this.cleanup.push(() => ro.disconnect());
+		}
+
 		const on = <K extends keyof HTMLElementEventMap>(el: EventTarget, type: K, fn: (e: HTMLElementEventMap[K]) => void, opts?: AddEventListenerOptions) => {
 			el.addEventListener(type, fn as EventListener, opts);
 			this.cleanup.push(() => el.removeEventListener(type, fn as EventListener, opts));
@@ -735,7 +824,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		let hoverRaf = 0;
 		on(this.scroller, 'mousemove', (e) => {
 			if (hoverRaf || !this.highlights.length) return;
-			hoverRaf = requestAnimationFrame(() => {
+			hoverRaf = this.win.requestAnimationFrame(() => {
 				hoverRaf = 0;
 				const hits = this.highlightsAt(e.clientX, e.clientY);
 				this.scroller.style.cursor = hits.length ? 'pointer' : '';
@@ -748,17 +837,24 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		});
 
 		on(this.scroller, 'scroll', () => {
-			window.clearTimeout(this.relocateTimer);
-			this.relocateTimer = window.setTimeout(() => {
+			this.win.clearTimeout(this.relocateTimer);
+			this.relocateTimer = this.win.setTimeout(() => {
+				// Skip while hidden, detached, or after moving to another window (the owner rebuilds us then).
+				if (!this.host.isConnected || !this.host.clientHeight || this.host.ownerDocument !== this.doc) return;
+				const a = this.currentAnchor();
+				if (a) {
+					this.anchor = a;
+					this.anchorPosition = 'top';
+				}
 				const loc = this.getLocation();
 				if (loc) this.emit('relocated', loc);
 			}, 150);
 		}, { passive: true });
 
 		let selTimer = 0;
-		on(document, 'selectionchange' as any, () => {
-			window.clearTimeout(selTimer);
-			selTimer = window.setTimeout(() => {
+		on(this.doc, 'selectionchange' as any, () => {
+			this.win.clearTimeout(selTimer);
+			selTimer = this.win.setTimeout(() => {
 				if (this.destroyed) return;
 				const r = this.getSelectionRange();
 				this.emit('selectionchange', r ? this.describeRange(r) : null);
@@ -768,11 +864,12 @@ export class EpubReader extends Emitter<ReaderEvents> {
 
 	destroy(): void {
 		this.destroyed = true;
-		window.clearTimeout(this.relocateTimer);
-		window.clearTimeout(this.flashTimer);
+		this.win.clearTimeout(this.relocateTimer);
+		this.win.clearTimeout(this.flashTimer);
+		this.win.cancelAnimationFrame(this.flashRaf);
 		for (const fn of this.cleanup) fn();
-		for (const name of this.highlightNames) CSS.highlights?.delete(name);
-		for (const k of ['flash', 'search', 'search-current', 'hover']) CSS.highlights?.delete(this.hlName(k));
+		for (const name of this.highlightNames) this.registry?.delete(name);
+		for (const k of ['flash', 'search', 'search-current', 'hover']) this.registry?.delete(this.hlName(k));
 		this.fontStyle?.remove();
 		this.shadow.replaceChildren();
 		this.removeAllListeners();
@@ -832,7 +929,7 @@ export function rangeText(range: Range): string {
 	if (root.nodeType === 3) {
 		pushText(root as Text, (root as Text).data.slice(range.startOffset, range.endOffset));
 	} else {
-		const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+		const walker = (root.ownerDocument ?? document).createTreeWalker(root, NodeFilter.SHOW_TEXT);
 		for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
 			if (!range.intersectsNode(n)) continue;
 			if (n.parentElement?.closest('script,style')) continue;

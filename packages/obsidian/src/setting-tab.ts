@@ -1,7 +1,7 @@
-import { PluginSettingTab, Setting, type App } from 'obsidian';
+import { PluginSettingTab, Setting, debounce, type App } from 'obsidian';
 import { buildAppearanceControls } from './appearance';
 import type EpubPlusPlus from './main';
-import type { LinkStyle, LinkType, OpenTarget } from './settings';
+import { newFormatId, type CopyAction, type LinkStyle, type LinkType, type OpenTarget } from './settings';
 
 export class EppSettingTab extends PluginSettingTab {
 	constructor(
@@ -15,6 +15,7 @@ export class EppSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		const s = this.plugin.settings;
 		const save = () => this.plugin.saveSettings();
+		const syncCommands = debounce(() => this.plugin.syncFormatCommands(), 800, true);
 		containerEl.empty();
 
 		new Setting(containerEl).setName('Reading').setHeading();
@@ -88,6 +89,32 @@ export class EppSettingTab extends PluginSettingTab {
 					}),
 			);
 
+		new Setting(containerEl).setName('Copying').setHeading();
+		new Setting(containerEl)
+			.setName('Ctrl/Cmd+C copies')
+			.setDesc('What copying a selection in an EPUB puts on the clipboard (also used by the system Copy menu).')
+			.addDropdown((d) => {
+				d.addOption('text', 'Plain text');
+				d.addOption('link', 'Link');
+				d.addOption('alt-link', s.linkType === 'cfi' ? 'Text-fragment link' : 'CFI link');
+				for (const f of s.copyFormats) d.addOption(`format:${f.id}`, f.name);
+				d.setValue(this.plugin.resolveCopyAction(s.copyAction) ? s.copyAction : 'text').onChange(async (v) => {
+					s.copyAction = v as CopyAction;
+					await save();
+				});
+			});
+		new Setting(containerEl)
+			.setName('Other copy shortcuts')
+			.setDesc('Each copy style is a command ("EPUB++: Copy selection as …"); assign keys to them under Hotkeys.')
+			.addButton((b) =>
+				b.setButtonText('Open hotkeys').onClick(() => {
+					const setting = (this.app as any).setting;
+					const tab = setting?.openTabById?.('hotkeys');
+					tab?.searchComponent?.setValue?.('EPUB++: Copy');
+					tab?.updateHotkeyVisibility?.();
+				}),
+			);
+
 		new Setting(containerEl).setName('Copy formats').setHeading();
 		containerEl.createEl('p', {
 			cls: 'setting-item-description',
@@ -102,6 +129,7 @@ export class EppSettingTab extends PluginSettingTab {
 						.onChange(async (v) => {
 							fmt.name = v;
 							await save();
+							syncCommands();
 						}),
 				)
 				.addTextArea((t) => {
@@ -118,20 +146,36 @@ export class EppSettingTab extends PluginSettingTab {
 						.setTooltip('Remove')
 						.onClick(async () => {
 							s.copyFormats.splice(i, 1);
+							if (s.copyAction === `format:${fmt.id}`) s.copyAction = 'text';
 							await save();
+							this.plugin.syncFormatCommands();
 							this.display();
 						}),
 				);
 		});
 		new Setting(containerEl).addButton((b) =>
 			b.setButtonText('Add format').onClick(async () => {
-				s.copyFormats.push({ name: 'New format', template: '{{text}} {{link}}' });
+				s.copyFormats.push({ id: newFormatId(), name: 'New format', template: '{{text}} {{link}}' });
 				await save();
+				this.plugin.syncFormatCommands();
 				this.display();
 			}),
 		);
 
 		new Setting(containerEl).setName('Highlights').setHeading();
+		new Setting(containerEl)
+			.setName('Links without a color')
+			.setDesc('For links that have no "&color=…".')
+			.addDropdown((d) =>
+				d
+					.addOptions({ default: 'Highlight with the default color', none: "Don't highlight" })
+					.setValue(s.noColor)
+					.onChange(async (v) => {
+						s.noColor = v as 'default' | 'none';
+						await save();
+						for (const view of this.plugin.epubViews()) view.refreshHighlights();
+					}),
+			);
 		new Setting(containerEl)
 			.setName('Default color')
 			.addDropdown((d) => {
@@ -196,6 +240,70 @@ export class EppSettingTab extends PluginSettingTab {
 				this.display();
 			}),
 		);
+
+		new Setting(containerEl).setName('Jumping to a passage').setHeading();
+		const applyFlash = () => {
+			for (const view of this.plugin.epubViews()) view.applyFlashSettings();
+		};
+		let flashRows: Setting[] = [];
+		new Setting(containerEl)
+			.setName('Highlight the passage after opening a link')
+			.setDesc('Shown on top of existing highlights, then fades out.')
+			.addToggle((t) =>
+				t.setValue(s.jumpHighlight).onChange(async (v) => {
+					s.jumpHighlight = v;
+					for (const r of flashRows) r.settingEl.toggle(v);
+					await save();
+				}),
+			);
+		flashRows = [
+			new Setting(containerEl).setName('Duration').setDesc('Seconds, including the fade-out.').addSlider((sl) =>
+				sl
+					.setLimits(0.5, 10, 0.5)
+					.setValue(s.jumpHighlightDuration / 1000)
+					.setDynamicTooltip()
+					.onChange(async (v) => {
+						s.jumpHighlightDuration = Math.round(v * 1000);
+						await save();
+						applyFlash();
+					}),
+			),
+			new Setting(containerEl).setName('Color').addColorPicker((c) =>
+				c.setValue(s.jumpHighlightColor).onChange(async (v) => {
+					s.jumpHighlightColor = v;
+					await save();
+					applyFlash();
+				}),
+			),
+		];
+		for (const r of flashRows) {
+			r.settingEl.addClass('epp-subsetting');
+			r.settingEl.toggle(s.jumpHighlight);
+		}
+
+		new Setting(containerEl).setName('Previews').setHeading();
+		new Setting(containerEl)
+			.setName('Hover previews and embeds')
+			.setDesc('Preview the linked passage when hovering an EPUB link (with Page preview), and render ![[book.epub#…]] embeds.')
+			.addToggle((t) =>
+				t.setValue(s.previews).onChange(async (v) => {
+					s.previews = v;
+					await save();
+					this.plugin.updatePreviews();
+				}),
+			);
+		new Setting(containerEl)
+			.setName('Preview height')
+			.addSlider((sl) =>
+				sl
+					.setLimits(160, 800, 20)
+					.setValue(s.previewHeight)
+					.setDynamicTooltip()
+					.onChange(async (v) => {
+						s.previewHeight = v;
+						await save();
+					}),
+			);
 
 		new Setting(containerEl).setName('Mobile').setHeading();
 		new Setting(containerEl)

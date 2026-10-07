@@ -11,7 +11,10 @@ const opt = (k: string) => {
 };
 const port = opt('--port') ?? '9333';
 const list = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()) as any[];
-const page = list.find((t) => t.type === 'page' && t.url.startsWith('app://')) ?? list.find((t) => t.type === 'page');
+const title = opt('--title');
+const page = title
+	? list.find((t) => t.type === 'page' && t.title.includes(title))
+	: (list.find((t) => t.type === 'page' && t.url.startsWith('app://')) ?? list.find((t) => t.type === 'page'));
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((r) => (ws.onopen = r));
 let id = 0;

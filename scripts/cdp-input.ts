@@ -40,11 +40,27 @@ if (drag) {
 	for (let i = 1; i <= 10; i++) await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x1 + ((x2 - x1) * i) / 10, y: y1 + ((y2 - y1) * i) / 10, button: 'left', buttons: 1 });
 	await mouse('mouseReleased', x2, y2);
 }
+const hover = opt('--hover'); // x,y[,modifiers]
+if (hover) {
+	const [x, y, mods] = hover.split(',').map(Number);
+	for (let i = 0; i < 3; i++) await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + i, y, modifiers: mods || 0, buttons: 0 });
+	await Bun.sleep(Number(opt('--hover-wait') ?? 1500));
+}
 const rc = opt('--rightclick');
 if (rc) {
 	const [x, y] = rc.split(',').map(Number);
 	await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'right', buttons: 2, clickCount: 1 });
 	await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'right', buttons: 0, clickCount: 1 });
+}
+const key = opt('--key'); // e.g. ctrl+c
+if (key) {
+	const parts = key.toLowerCase().split('+');
+	const k = parts.pop()!;
+	const modifiers = (parts.includes('alt') ? 1 : 0) | (parts.includes('ctrl') ? 2 : 0) | (parts.includes('meta') ? 4 : 0) | (parts.includes('shift') ? 8 : 0);
+	const base = { modifiers, key: k, code: `Key${k.toUpperCase()}`, windowsVirtualKeyCode: k.toUpperCase().charCodeAt(0) };
+	const commands = modifiers === 2 && k === 'c' ? ['copy'] : [];
+	await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...base, commands });
+	await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
 }
 await Bun.sleep(400);
 const ev = opt('--eval');
