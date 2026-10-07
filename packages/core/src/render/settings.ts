@@ -97,6 +97,10 @@ export const BASE_CSS = /* css */ `
 	-webkit-text-size-adjust: none;
 	text-size-adjust: none;
 	overscroll-behavior: contain;
+	/* Host apps (e.g. Obsidian) often set user-select: none on <body>; 'auto' would inherit it. */
+	-webkit-user-select: text;
+	user-select: text;
+	-webkit-touch-callout: default;
 }
 .epp-scroller:focus { outline: none; }
 .epp-content {
