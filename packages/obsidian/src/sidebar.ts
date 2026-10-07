@@ -186,9 +186,9 @@ export class Sidebar {
 			const el = this.resultsEl.createDiv('epp-search-result');
 			el.dataset.index = String(i);
 			el.createSpan({ text: r.excerpt.before });
-			el.createEl('mark', { text: r.excerpt.match });
+			el.createEl('mark', { cls: 'epp-search-match', text: r.excerpt.match });
 			el.createSpan({ text: r.excerpt.after });
-			el.addEventListener('click', () => this.select(i));
+			el.addEventListener('click', () => this.select(i, true));
 		}
 		if (this.results.length > max) this.resultsEl.createDiv({ cls: 'epp-empty', text: `Showing first ${max} results. Refine your search to see more.` });
 	}
@@ -199,7 +199,8 @@ export class Sidebar {
 		this.select(this.current === -1 ? (delta > 0 ? 0 : n - 1) : (this.current + delta + n) % n);
 	}
 
-	private select(i: number): void {
+	/** `fromClick`: a result was tapped, so a drawer-style sidebar gets out of the way. */
+	private select(i: number, fromClick = false): void {
 		this.current = i;
 		this.view.reader?.showSearchResults(this.results, i);
 		this.searchInfo.setText(`${i + 1} / ${this.results.length}`);
@@ -207,7 +208,7 @@ export class Sidebar {
 		const el = this.resultsEl.querySelector(`[data-index="${i}"]`) as HTMLElement | null;
 		el?.addClass('is-active');
 		el?.scrollIntoView({ block: 'nearest' });
-		if (this.view.sidebarIsOverlay()) this.view.toggleSidebar(false);
+		if (fromClick && this.view.sidebarIsOverlay()) this.view.toggleSidebar(false);
 	}
 
 	// --- Highlights ------------------------------------------------------------------------------

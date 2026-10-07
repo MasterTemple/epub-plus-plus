@@ -227,9 +227,17 @@
 .epp-search-result.is-active {
 	background: var(--background-modifier-active-hover);
 }
-.epp-search-result mark {
-	background: var(--text-highlight-bg);
-	color: inherit;
+.epp-search-result mark.epp-search-match {
+	/* Same colors as the in-book search highlights (core reader), independent of the theme's <mark>. */
+	background-color: rgba(255, 170, 0, 0.4);
+	color: var(--text-normal);
+	font-weight: var(--font-semibold);
+	border-radius: 2px;
+	padding: 0 1px;
+}
+.epp-search-result.is-active mark.epp-search-match {
+	background-color: rgba(255, 120, 0, 0.8);
+	color: black;
 }
 
 /* Highlights list */
