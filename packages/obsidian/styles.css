@@ -654,3 +654,59 @@ body.epp-appearance-open .mobile-navbar {
 	color: var(--text-faint);
 	font-size: var(--font-ui-smaller);
 }
+
+/* ---------- Highlights tab: filters, grouping, comments ---------- */
+.epp-segmented {
+	display: flex;
+	margin: 0 2px var(--size-4-2);
+}
+.epp-segmented .epp-mode-button {
+	padding: 3px 4px;
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.epp-hl-group-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+	margin: 0 2px var(--size-4-2);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+.epp-hl-group-row select {
+	font-size: var(--font-ui-smaller);
+}
+.epp-hl-group {
+	margin: var(--size-4-3) 2px var(--size-4-1);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+}
+.epp-hl-comment {
+	margin-top: 6px;
+	padding: 4px 8px;
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	font-size: var(--font-ui-small);
+}
+.epp-hl-comment > :first-child {
+	margin-top: 0;
+}
+.epp-hl-comment > :last-child {
+	margin-bottom: 0;
+}
+.epp-hl-note {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+.epp-hl-note-icon svg {
+	width: 12px;
+	height: 12px;
+}
+.epp-mobile .epp-segmented .epp-mode-button {
+	padding: 8px 4px;
+}

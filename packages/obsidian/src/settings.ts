@@ -81,6 +81,11 @@ export interface EppSettings {
 	annotationMode: AnnotationMode;
 	/** Resolve text-fragment links in annotation files to CFIs to place new annotations exactly. */
 	annotationResolveTextFragments: boolean;
+	/** Highlights tab: which highlights to list and how to group them. */
+	highlightsFilter: 'all' | 'annotation' | 'other';
+	highlightsGroup: 'book' | 'note' | 'chapter';
+	/** "Split pane": reuse an open tab of the EPUB, or another pane, before splitting. */
+	reusePanes: boolean;
 	/** Bumped when settings need a one-time migration. */
 	settingsVersion: number;
 	/** Last reading position per EPUB path. */
@@ -128,6 +133,9 @@ export const DEFAULT_SETTINGS: EppSettings = {
 	annotationFileName: '{{book}} - Annotations',
 	annotationMode: 'both',
 	annotationResolveTextFragments: true,
+	highlightsFilter: 'all',
+	highlightsGroup: 'book',
+	reusePanes: true,
 	selectionMenu: [],
 	highlightMenu: [],
 	settingsVersion: 2,

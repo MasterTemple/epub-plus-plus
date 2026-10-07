@@ -23,7 +23,7 @@ The repo has two packages:
   - `color`, `line-height`, `font-family` and `text-align` fall back through CSS variables, so themes and reader settings apply live without re-rendering.
   - `@font-face` rules are lifted to the document, because they don't work inside shadow roots, and renamed per book.
 - **Links in either style.** Wiki or markdown links, using CFI (default) or Text Fragments (`:~:text=`), plus plain hrefs (`#chapter_010.xhtml#sec3`).
-  - Clicking a link reuses an open tab for that EPUB, or opens it in a split by default.
+  - Clicking a link switches to the EPUB's tab (even an unloaded background tab), or opens it next to the note. With *Reuse tabs and panes*, it opens as a tab in an existing other pane before splitting again.
   - The link opening is intercepted, PDF++-style, through a patch of `Workspace.openLinkText`.
 - **Live highlights.** Rendered with the CSS Custom Highlight API, so the DOM is never mutated and CFIs stay valid. They update as notes change.
 - **Highlight actions.**
@@ -43,7 +43,10 @@ The repo has two packages:
   - Hovering a highlight shows its comment; on mobile, tapping does.
   - The highlight menu has *Add comment* / *Edit comment*. Adding one double-embeds the callout's existing lines as they are and appends the comment.
 - **Markdown copying.** Selections are converted from the book's HTML to Markdown (emphasis, including CSS-styled; lists; headings; line breaks) for copying and `{{text}}`. This can be turned off.
-- **Sidebar.** The in-view sidebar has a table of contents (tracks the current chapter), search (case / whole word / regex, results grouped by chapter, Enter / Shift+Enter to step through), and a list of the book's highlights.
+- **Sidebar.** The in-view sidebar has three tabs:
+  - **Contents:** the table of contents, tracking the current chapter.
+  - **Search:** case / whole word / regex; results are grouped by chapter and step with Enter / Shift+Enter.
+  - **Highlights:** all highlights, those in the annotation file, or those elsewhere; grouped by book order, chapter or note, with comments rendered and annotation-file entries labeled by their section heading.
 - **Previews.**
   - EPUB links preview on hover in Reading view, and in the editor without Ctrl/Cmd (toggle under Page preview).
   - Links inside a preview either jump within the preview or open the EPUB tab.

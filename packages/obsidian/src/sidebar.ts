@@ -1,5 +1,5 @@
-import { compareCfi, type EpubBook, type SearchResult, type TocItem } from '@epub-pp/core';
-import { Platform, debounce, setIcon } from 'obsidian';
+import { type EpubBook, type SearchResult, type TocItem } from '@epub-pp/core';
+import { Component, MarkdownRenderer, Platform, debounce, setIcon, type TFile } from 'obsidian';
 import type { HighlightEntry } from './highlight-index';
 import type { EpubView } from './view';
 
@@ -252,44 +252,132 @@ export class Sidebar {
 
 	// --- Highlights ------------------------------------------------------------------------------
 
+	private hlEntries: HighlightEntry[] = [];
+	private hlRender: Component | null = null;
+
 	setHighlights(entries: HighlightEntry[]): void {
+		this.hlEntries = entries;
+		this.renderHighlights();
+	}
+
+	/** Highlights tab: filter (all / annotation file / elsewhere), grouping, comments. */
+	private renderHighlights(): void {
 		const el = this.highlightsEl;
+		const scroll = el.scrollTop;
 		el.empty();
+		const { plugin, reader, file } = this.view;
+		const s = plugin.settings;
+		const ann = file ? plugin.annotations.find(file) : null;
+		const inAnn = (e: HighlightEntry) => !!ann && e.sourcePath === ann.path;
+
 		const bar = el.createDiv('epp-hl-toolbar');
 		const btn = bar.createEl('button', { cls: 'epp-hl-annotation-button' });
 		setIcon(btn.createSpan(), 'notebook-pen');
-		btn.createSpan({ text: 'Annotation file' });
-		btn.setAttr('aria-label', 'Open (or create) the annotation file for this book');
-		btn.addEventListener('click', () => this.view.plugin.openAnnotationFile(this.view));
-		if (!entries.length) {
-			el.createDiv({ cls: 'epp-empty', text: 'No highlights yet. Select text, right-click and copy a link into a note.' });
+		btn.createSpan({ text: ann ? 'Open annotation file' : 'Create annotation file' });
+		btn.addEventListener('click', () => plugin.openAnnotationFile(this.view));
+
+		const counts = { all: this.hlEntries.length, annotation: this.hlEntries.filter(inAnn).length, other: this.hlEntries.filter((e) => !inAnn(e)).length };
+		const filters = el.createDiv('epp-segmented epp-hl-filters');
+		const labels = { all: 'All', annotation: 'Annotation file', other: 'Elsewhere' } as const;
+		for (const f of ['all', 'annotation', 'other'] as const) {
+			const b = filters.createDiv({ cls: 'epp-mode-button', text: `${labels[f]} ${counts[f]}` });
+			b.toggleClass('is-active', s.highlightsFilter === f);
+			b.addEventListener('click', () => {
+				s.highlightsFilter = f;
+				plugin.saveSettings();
+				this.renderHighlights();
+			});
+		}
+		const groupRow = el.createDiv('epp-hl-group-row');
+		groupRow.createSpan({ text: 'Group by' });
+		const select = groupRow.createEl('select', { cls: 'dropdown' });
+		for (const [v, t] of [
+			['book', 'Book order'],
+			['chapter', 'Chapter'],
+			['note', 'Note'],
+		] as const)
+			select.createEl('option', { value: v, text: t });
+		select.value = s.highlightsGroup;
+		select.addEventListener('change', () => {
+			s.highlightsGroup = select.value as typeof s.highlightsGroup;
+			plugin.saveSettings();
+			this.renderHighlights();
+		});
+
+		const shown = this.hlEntries.filter((e) => (s.highlightsFilter === 'all' ? true : s.highlightsFilter === 'annotation' ? inAnn(e) : !inAnn(e)));
+		if (!shown.length) {
+			const msg =
+				s.highlightsFilter === 'annotation'
+					? ann
+						? 'No annotations in the annotation file yet.'
+						: 'This book has no annotation file yet.'
+					: 'No highlights yet. Select text, right-click and copy a link into a note.';
+			el.createDiv({ cls: 'epp-empty', text: msg });
 			return;
 		}
-		const sorted = [...entries].sort((a, b) => {
-			try {
-				if (a.locator.startsWith('epubcfi') && b.locator.startsWith('epubcfi')) return compareCfi(a.locator, b.locator);
-			} catch {
-				/* fall through */
-			}
-			return 0;
+
+		// Book order by resolved position (works for CFI and text-fragment links alike).
+		const pos = new Map(shown.map((e) => [e, reader?.highlightRange(e.id) ?? null]));
+		const sorted = [...shown].sort((a, b) => {
+			const ra = pos.get(a);
+			const rb = pos.get(b);
+			if (!ra || !rb) return ra ? -1 : rb ? 1 : 0;
+			return ra.compareBoundaryPoints(Range.START_TO_START, rb) || ra.compareBoundaryPoints(Range.END_TO_END, rb);
 		});
-		const palette = Object.fromEntries(this.view.plugin.settings.palette.map((p) => [p.name, p.color]));
+		const groups = new Map<string, HighlightEntry[]>();
+		const groupOf = (e: HighlightEntry): string => {
+			if (s.highlightsGroup === 'note') return inAnn(e) ? `\u0000${ann!.basename}` : e.sourcePath.replace(/\.md$/, '');
+			if (s.highlightsGroup === 'chapter') {
+				const r = pos.get(e);
+				return (r && reader?.tocItemAt(r)?.label) || 'Location not found';
+			}
+			return '';
+		};
 		for (const e of sorted) {
-			const item = el.createDiv('epp-hl-item');
-			item.style.setProperty('--swatch', (e.color && (palette[e.color] ?? e.color)) || palette[this.view.plugin.settings.defaultColor] || 'var(--text-highlight-bg)');
-			const range = this.view.reader?.highlightRange(e.id);
-			const text = range?.toString().replace(/\s+/g, ' ').trim();
-			item.createDiv({ cls: 'epp-hl-text', text: text ? (text.length > 220 ? `${text.slice(0, 220)}…` : text) : '(location not found)' });
-			const meta = item.createDiv('epp-hl-meta');
-			const note = meta.createEl('a', { text: e.sourcePath.replace(/\.md$/, ''), cls: 'epp-hl-note' });
-			note.addEventListener('click', (ev) => {
-				ev.stopPropagation();
-				this.view.plugin.openSource(e, this.view);
-			});
-			item.addEventListener('click', () => {
-				this.view.navigate(e.locator);
-				if (this.view.sidebarIsOverlay()) this.view.toggleSidebar(false);
-			});
+			const g = groupOf(e);
+			if (!groups.has(g)) groups.set(g, []);
+			groups.get(g)!.push(e);
 		}
+		let order = [...groups.keys()];
+		if (s.highlightsGroup === 'note') order = order.sort((x, y) => x.localeCompare(y)); // annotation file (\u0000) first
+
+		if (this.hlRender) this.view.removeChild(this.hlRender);
+		this.hlRender = this.view.addChild(new Component());
+		const palette = Object.fromEntries(s.palette.map((p) => [p.name, p.color]));
+		for (const g of order) {
+			const list = groups.get(g)!;
+			if (g) el.createDiv({ cls: 'epp-hl-group', text: `${g.replace('\u0000', '')} · ${list.length}` });
+			for (const e of list) this.renderHighlightItem(el, e, palette, inAnn(e) ? ann : null);
+		}
+		el.scrollTop = scroll;
+	}
+
+	private renderHighlightItem(el: HTMLElement, e: HighlightEntry, palette: Record<string, string>, ann: TFile | null): void {
+		const s = this.view.plugin.settings;
+		const item = el.createDiv('epp-hl-item');
+		item.style.setProperty('--swatch', (e.color && (palette[e.color] ?? e.color)) || palette[s.defaultColor] || 'var(--text-highlight-bg)');
+		const range = this.view.reader?.highlightRange(e.id);
+		const text = range?.toString().replace(/\s+/g, ' ').trim();
+		item.createDiv({ cls: 'epp-hl-text', text: text ? (text.length > 220 ? `${text.slice(0, 220)}…` : text) : '(location not found)' });
+		if (e.comment) {
+			const c = item.createDiv('epp-hl-comment markdown-rendered');
+			void MarkdownRenderer.render(this.view.app, e.comment, c, e.sourcePath, this.hlRender!);
+		}
+		const meta = item.createDiv('epp-hl-meta');
+		// In the annotation file the section heading says more than the file path.
+		const label = ann ? (e.heading ?? ann.basename) : e.sourcePath.replace(/\.md$/, '');
+		const note = meta.createEl('a', { cls: 'epp-hl-note' });
+		if (ann) setIcon(note.createSpan('epp-hl-note-icon'), 'notebook-pen');
+		note.createSpan({ text: label });
+		note.setAttr('aria-label', e.sourcePath);
+		note.addEventListener('click', (ev) => {
+			ev.stopPropagation();
+			this.view.plugin.openSource(e, this.view);
+		});
+		item.addEventListener('click', (ev) => {
+			if ((ev.target as HTMLElement).closest('a')) return; // links inside comments
+			this.view.navigate(e.locator);
+			if (this.view.sidebarIsOverlay()) this.view.toggleSidebar(false);
+		});
 	}
 }

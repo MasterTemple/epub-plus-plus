@@ -1,4 +1,5 @@
 import { parseLocator, tryParseCfi } from '@epub-pp/core';
+import { headingLabel, parseHeadings } from './annotation-utils';
 import { getComment } from './comment-utils';
 import { Events, TFile, parseLinktext, type App, type CachedMetadata, type Pos, type ReferenceCache } from 'obsidian';
 
@@ -16,6 +17,8 @@ export interface HighlightEntry {
 	position: Pos;
 	/** Comment written next to the link in the note (see comment-utils), once loaded. */
 	comment?: string | null;
+	/** Label of the nearest heading above the link in its note (e.g. the annotation-file section). */
+	heading?: string | null;
 }
 
 /**
@@ -80,12 +83,16 @@ export class HighlightIndex extends Events {
 	private async loadComments(file: TFile): Promise<void> {
 		const text = await this.app.vault.cachedRead(file);
 		const lines = text.split('\n');
+		const headings = parseHeadings(lines);
 		const affected = new Set<string>();
 		for (const epub of this.bySource.get(file.path) ?? []) {
 			for (const e of this.byEpub.get(epub)?.get(file.path) ?? []) {
 				const comment = getComment(lines, e.position.start.line);
-				if (comment !== (e.comment ?? null)) affected.add(epub);
+				let heading: string | null = null;
+				for (const h of headings) if (h.line < e.position.start.line) heading = headingLabel(h.text);
+				if (comment !== (e.comment ?? null) || heading !== (e.heading ?? null)) affected.add(epub);
 				e.comment = comment;
+				e.heading = heading;
 			}
 		}
 		if (affected.size) this.trigger('changed', affected);

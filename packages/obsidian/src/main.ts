@@ -257,10 +257,14 @@ export default class EpubPlusPlus extends Plugin {
 	async openEpub(file: TFile, subpath: string, newLeaf?: PaneType | boolean, state?: OpenViewState): Promise<void> {
 		const { workspace } = this.app;
 		if (!newLeaf) {
-			const existing = this.epubViews().find((v) => v.file?.path === file.path);
+			const existing = this.findEpubLeaf(file);
 			if (existing) {
-				workspace.revealLeaf(existing.leaf);
-				if (subpath) existing.navigate(subpath);
+				// Switch to that tab in its own pane (loading it if it was a background tab).
+				await workspace.revealLeaf(existing);
+				await (existing as WorkspaceLeaf & { loadIfDeferred?: () => Promise<void> }).loadIfDeferred?.();
+				if (existing.view instanceof EpubView) {
+					if (subpath) existing.view.navigate(subpath);
+				} else await existing.openFile(file, { eState: { subpath: subpath || undefined } });
 				return;
 			}
 		}
@@ -270,13 +274,45 @@ export default class EpubPlusPlus extends Plugin {
 		await leaf.openFile(file, { ...state, active: true, eState: { ...(state?.eState ?? {}), subpath: subpath || undefined } });
 	}
 
-	/** Pick a leaf according to a setting; `split` reuses an adjacent leaf when one exists. */
+	/**
+	 * A tab showing this EPUB. With "reuse panes" this includes background tabs Obsidian hasn't
+	 * loaded yet (deferred views); otherwise only loaded EPUB views count.
+	 */
+	private findEpubLeaf(file: TFile): WorkspaceLeaf | null {
+		const loaded = this.epubViews().find((v) => v.file?.path === file.path);
+		if (loaded) return loaded.leaf;
+		if (!this.settings.reusePanes) return null;
+		return this.app.workspace.getLeavesOfType(VIEW_TYPE_EPUB).find((l) => (l.getViewState().state as { file?: string } | undefined)?.file === file.path) ?? null;
+	}
+
+	/** Pick a leaf according to a setting. */
 	private leafFor(target: OpenTarget, preferSplit: () => boolean): WorkspaceLeaf {
 		const { workspace } = this.app;
 		if (target === 'current' || Platform.isPhone) return workspace.getLeaf(false);
 		if (target === 'tab') return workspace.getLeaf('tab');
 		if (!preferSplit()) return workspace.getLeaf(false);
+		if (this.settings.reusePanes) {
+			// Another pane already exists: open a new tab there instead of splitting again.
+			const pane = this.otherPane();
+			if (pane) return workspace.createLeafInParent(pane as any, (pane as any).children?.length ?? 0);
+		}
 		return workspace.getLeaf('split', 'vertical');
+	}
+
+	/** A tab group in the main area other than the active one, preferring one that holds EPUBs. */
+	private otherPane(): unknown | null {
+		const { workspace } = this.app;
+		// The pane of the note the link was clicked in.
+		const active = (workspace.getActiveViewOfType(MarkdownView)?.leaf ?? workspace.getMostRecentLeaf())?.parent;
+		const panes: { pane: unknown; epub: boolean }[] = [];
+		workspace.iterateRootLeaves((l) => {
+			if (!l.parent || l.parent === active) return;
+			const found = panes.find((p) => p.pane === l.parent);
+			const epub = l.view.getViewType() === VIEW_TYPE_EPUB;
+			if (found) found.epub ||= epub;
+			else panes.push({ pane: l.parent, epub });
+		});
+		return (panes.find((p) => p.epub) ?? panes[0])?.pane ?? null;
 	}
 
 	// --------------------------------------------------------------------------------------------
@@ -488,7 +524,10 @@ export default class EpubPlusPlus extends Plugin {
 		const existed = this.annotations.find(view.file);
 		try {
 			const file = existed ?? (await this.annotations.create(view));
-			if (!existed) new Notice(`Created ${file.path}`);
+			if (!existed) {
+				new Notice(`Created ${file.path}`);
+				view.refreshHighlights();
+			}
 			await this.openNote(file, view);
 		} catch (e) {
 			new Notice(`EPUB++: ${(e as Error).message}`);

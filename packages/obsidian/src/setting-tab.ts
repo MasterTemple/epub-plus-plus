@@ -123,6 +123,15 @@ export class EppSettingTab extends PluginSettingTab {
 					}),
 			);
 		new Setting(containerEl)
+			.setName('Reuse tabs and panes')
+			.setDesc('With "Split pane": if the EPUB is already open in a tab of another pane, switch to it there; otherwise open it as a new tab in an existing other pane before creating a new split.')
+			.addToggle((t) =>
+				t.setValue(s.reusePanes).onChange(async (v) => {
+					s.reusePanes = v;
+					await save();
+				}),
+			);
+		new Setting(containerEl)
 			.setName('Open notes from highlights in')
 			.addDropdown((d) =>
 				d
