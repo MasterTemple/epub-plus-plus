@@ -717,12 +717,26 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		const rules = [
 			`::highlight(${this.hlName('search')}) { background-color: rgba(255, 170, 0, 0.35); }`,
 			`::highlight(${this.hlName('search-current')}) { background-color: rgba(255, 120, 0, 0.8); color: black; }`,
+			`::highlight(${this.hlName('pending')}) { background-color: var(--text-selection, Highlight); }`,
 			`::highlight(${this.hlName('hover')}) { text-decoration: underline 2px; text-decoration-color: currentColor; }`,
 		];
 		for (const [key, g] of groups ?? []) {
 			rules.push(`::highlight(${this.hlName(key)}) { background-color: color-mix(in srgb, ${g.css} ${pct}%, transparent); }`);
 		}
 		this.highlightStyle.textContent = rules.join('\n');
+	}
+
+	/**
+	 * Paint a range as if it were selected (or clear it with null). Lets an app drop the native
+	 * selection (and with it the OS selection toolbar on mobile) while its own menu is open.
+	 */
+	setPendingSelection(range: Range | null): void {
+		const name = this.hlName('pending');
+		if (range && this.HighlightCtor) {
+			const h = new this.HighlightCtor(range);
+			h.priority = 20;
+			this.registry!.set(name, h);
+		} else this.registry?.delete(name);
 	}
 
 	/** Highlights under a viewport point. */
@@ -896,7 +910,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		this.win.cancelAnimationFrame(this.flashRaf);
 		for (const fn of this.cleanup) fn();
 		for (const name of this.highlightNames) this.registry?.delete(name);
-		for (const k of ['flash', 'search', 'search-current', 'hover']) this.registry?.delete(this.hlName(k));
+		for (const k of ['flash', 'search', 'search-current', 'hover', 'pending']) this.registry?.delete(this.hlName(k));
 		this.fontStyle?.remove();
 		this.shadow.replaceChildren();
 		this.removeAllListeners();

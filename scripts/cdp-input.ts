@@ -57,6 +57,14 @@ if (swipe) {
 	}
 	await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
+const tap = opt('--tap'); // x,y (touch)
+if (tap) {
+	const [x, y] = tap.split(',').map(Number);
+	await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+	await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+	await Bun.sleep(60);
+	await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
 const rc = opt('--rightclick');
 if (rc) {
 	const [x, y] = rc.split(',').map(Number);

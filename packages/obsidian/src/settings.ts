@@ -23,6 +23,8 @@ export interface EppSettings {
 	reader: ReaderSettings;
 	palette: PaletteColor[];
 	defaultColor: string;
+	/** Color picked last in a menu or the palette (null = no color); undefined until first pick. */
+	lastColor?: string | null;
 	/** Include `&color=` in copied links. */
 	colorInLinks: boolean;
 	highlightOpacity: number;

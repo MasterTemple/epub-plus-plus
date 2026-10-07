@@ -452,3 +452,35 @@ body.epp-drawer-open .mobile-navbar {
 		display: none;
 	}
 }
+
+/* ---------- Color arrow inside menu items (tap item = previous color, arrow = pick) ---------- */
+.menu-item .epp-menu-color-picker {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	margin: -4px -6px -4px auto;
+	padding: 4px 6px 4px 12px;
+	border-radius: var(--radius-s);
+	color: var(--text-muted);
+	cursor: pointer;
+}
+.menu-item .epp-menu-color-picker:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+.menu-item .epp-menu-color-picker .epp-menu-swatch {
+	margin: 0;
+}
+.menu-item .epp-menu-chevron {
+	display: flex;
+}
+.menu-item .epp-menu-chevron svg {
+	width: 16px;
+	height: 16px;
+}
+.is-mobile .menu-item .epp-menu-color-picker {
+	margin: -10px -12px -10px auto;
+	padding: 10px 14px 10px 22px;
+	border-inline-start: var(--border-width) solid var(--background-modifier-border);
+	border-radius: 0;
+}

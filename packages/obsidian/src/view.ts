@@ -29,7 +29,8 @@ export class EpubView extends FileView {
 		readonly plugin: EpubPlusPlus,
 	) {
 		super(leaf);
-		this.activeColor = plugin.settings.defaultColor || null;
+		const last = plugin.settings.lastColor;
+		this.activeColor = last === undefined ? plugin.settings.defaultColor || null : last;
 		this.scope = new Scope(this.app.scope);
 		this.scope.register(['Mod'], 'f', () => {
 			this.openSearch();
@@ -288,40 +289,69 @@ export class EpubView extends FileView {
 	}
 
 	/**
-	 * Obsidian mobile opens the pull-down action (command palette) on a downward swipe when the view
-	 * looks scrolled to the top. Our scroller lives in a shadow root, so it always looks that way.
-	 * Keep vertical swipes inside the reader unless it really is at the top.
+	 * Touch gestures inside the view:
+	 * - Vertical: Obsidian mobile opens its pull-down action (command palette) on a downward swipe when
+	 *   the view looks scrolled to the top, and our scroller lives in a shadow root, so it always looks
+	 *   that way. Keep vertical swipes in the reader unless it really is at the top.
+	 * - Horizontal (mobile): a swipe that would open Obsidian's left drawer opens our sidebar first; if
+	 *   it's already open, the swipe goes to Obsidian. Swiping back closes our sidebar.
 	 */
 	private guardTouchGestures(): void {
 		let x0 = 0;
 		let y0 = 0;
-		let vertical: boolean | null = null;
+		let t0 = 0;
+		let dx = 0;
+		let axis: 'x' | 'y' | null = null;
+		let inReader = false;
+		let mine: 'open' | 'close' | null = null;
+		const readerScrolled = () => inReader && !!this.reader && this.reader.scroller.scrollTop > 0;
 		const start = (e: TouchEvent) => {
-			this.touching = true;
-			x0 = e.touches[0]?.clientX ?? 0;
-			y0 = e.touches[0]?.clientY ?? 0;
-			vertical = null;
+			const t = e.touches[0];
+			inReader = this.hostEl.contains(e.target as Node);
+			if (inReader) {
+				this.touching = true;
+				this.lastMenuCfi = null; // a new interaction may reselect the same text
+			}
+			x0 = t?.clientX ?? 0;
+			y0 = t?.clientY ?? 0;
+			t0 = Date.now();
+			dx = 0;
+			axis = null;
+			mine = null;
 		};
 		const move = (e: TouchEvent) => {
 			const t = e.touches[0];
-			if (!t || !this.reader) return;
-			const dx = t.clientX - x0;
+			if (!t) return;
+			dx = t.clientX - x0;
 			const dy = t.clientY - y0;
-			if (vertical === null && Math.abs(dx) + Math.abs(dy) > 6) vertical = Math.abs(dy) > Math.abs(dx);
-			// Horizontal swipes still reach Obsidian (sidebar gestures).
-			if (vertical && this.reader.scroller.scrollTop > 0) e.stopPropagation();
+			if (axis === null && Math.abs(dx) + Math.abs(dy) > 8) {
+				axis = Math.abs(dy) > Math.abs(dx) ? 'y' : 'x';
+				// A drag that starts after a long press is adjusting a text selection, not a swipe.
+				const longPress = Date.now() - t0 > 350 || !!this.reader?.getSelectionRange();
+				if (axis === 'x' && Platform.isMobile && !longPress) {
+					const open = this.mainEl.hasClass('epp-sidebar-open');
+					mine = dx > 0 ? (open ? null : 'open') : open ? 'close' : null;
+				}
+			}
+			if ((axis === 'y' && readerScrolled()) || mine) e.stopPropagation();
 		};
 		const end = (e: TouchEvent) => {
-			if (e.touches.length === 0) {
+			if (e.touches.length === 0 && inReader) {
 				this.touching = false;
 				this.scheduleSelectionMenu(this.reader?.getSelection() ?? null);
 			}
-			if (vertical && this.reader && this.reader.scroller.scrollTop > 0) e.stopPropagation();
+			if (axis === 'y' && readerScrolled()) e.stopPropagation();
+			if (mine) {
+				e.stopPropagation();
+				if (mine === 'open' && dx > 50) this.toggleSidebar(true, false);
+				else if (mine === 'close' && dx < -50) this.toggleSidebar(false, false);
+				mine = null;
+			}
 		};
-		this.registerDomEvent(this.hostEl, 'touchstart', start, { passive: true });
-		this.registerDomEvent(this.hostEl, 'touchmove', move, { passive: true });
-		this.registerDomEvent(this.hostEl, 'touchend', end, { passive: true });
-		this.registerDomEvent(this.hostEl, 'touchcancel', end, { passive: true });
+		this.registerDomEvent(this.mainEl, 'touchstart', start, { passive: true });
+		this.registerDomEvent(this.mainEl, 'touchmove', move, { passive: true });
+		this.registerDomEvent(this.mainEl, 'touchend', end, { passive: true });
+		this.registerDomEvent(this.mainEl, 'touchcancel', end, { passive: true });
 	}
 
 	private onCopy(e: ClipboardEvent): void {
@@ -345,7 +375,7 @@ export class EpubView extends FileView {
 		this.reader?.setPalette(this.plugin.paletteRecord(), this.plugin.settings.defaultColor);
 	}
 
-	private renderPalette(): void {
+	renderPalette(): void {
 		const el = this.paletteEl;
 		el.empty();
 		const add = (name: string | null, color: string, label: string) => {
@@ -354,8 +384,7 @@ export class EpubView extends FileView {
 			if (!name) sw.addClass('epp-swatch-none');
 			sw.toggleClass('is-active', this.activeColor === name);
 			sw.addEventListener('click', () => {
-				this.activeColor = name;
-				this.renderPalette();
+				this.setActiveColor(name);
 				const sel = this.reader?.getSelection();
 				// PDF++-like: clicking a color while text is selected copies a link in that color.
 				if (sel) this.plugin.copy(this, sel, 'link', name);
@@ -379,16 +408,56 @@ export class EpubView extends FileView {
 		return frag;
 	}
 
-	/** Add an item that runs `action(color)`; with submenu support it offers every palette color. */
-	private addColorItem(menu: Menu, title: string, icon: string, section: string, action: (color: string | null) => void): void {
+	/** Remember the color picked last; it is what tapping a colored menu item uses next time. */
+	setActiveColor(color: string | null): void {
+		this.activeColor = color;
+		this.plugin.settings.lastColor = color;
+		this.plugin.saveSettings();
+		for (const v of this.plugin.epubViews()) v.renderPalette();
+	}
+
+	/**
+	 * A menu item that runs `action(color)`. Tapping the item uses the previous color; the arrow at its
+	 * end (with a generous tap area) opens a color picker instead.
+	 */
+	private addColorItem(menu: Menu, title: string, icon: string, section: string, action: (color: string | null) => void, checked?: string | null): void {
 		menu.addItem((item) => {
-			item.setTitle(title).setIcon(icon).setSection(section);
-			const sub: Menu | undefined = (item as MenuItem & { setSubmenu?: () => Menu }).setSubmenu?.();
-			if (sub) {
-				const colors: (string | null)[] = [...this.plugin.settings.palette.map((p) => p.name), null];
-				for (const c of colors) sub.addItem((si) => si.setTitle(this.colorTitle(c)).setChecked(c === this.activeColor).onClick(() => action(c)));
-			} else item.onClick(() => action(this.activeColor));
+			item.setTitle(title).setIcon(icon).setSection(section).onClick(() => action(this.activeColor));
+			const dom = (item as MenuItem & { dom?: HTMLElement }).dom;
+			if (!dom) return;
+			const picker = dom.createDiv({ cls: 'epp-menu-color-picker', attr: { 'aria-label': 'Choose color' } });
+			const sw = picker.createSpan({ cls: 'epp-menu-swatch' });
+			sw.style.setProperty('--swatch', this.colorCss(this.activeColor));
+			if (!this.activeColor) sw.addClass('epp-swatch-none');
+			setIcon(picker.createSpan({ cls: 'epp-menu-chevron' }), 'chevron-right');
+			// Keep these events away from the menu item so it doesn't run its own action.
+			for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend'])
+				picker.addEventListener(type, (e) => e.stopPropagation());
+			picker.addEventListener('click', (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				const r = picker.getBoundingClientRect();
+				this.keepPendingSelection = true;
+				menu.hide();
+				this.openColorMenu({ x: r.right, y: r.top }, checked === undefined ? this.activeColor : checked, (c) => {
+					this.setActiveColor(c);
+					action(c);
+				});
+			});
 		});
+	}
+
+	private colorCss(name: string | null): string {
+		if (!name) return 'transparent';
+		return this.plugin.settings.palette.find((p) => p.name === name)?.color ?? name;
+	}
+
+	private openColorMenu(at: { x: number; y: number }, checked: string | null, onPick: (color: string | null) => void): void {
+		const m = new Menu();
+		for (const c of [...this.plugin.settings.palette.map((p) => p.name), null])
+			m.addItem((i) => i.setTitle(this.colorTitle(c)).setChecked(c === checked).onClick(() => onPick(c)));
+		m.onHide(() => this.afterMenuHidden());
+		m.showAtPosition(at);
 	}
 
 	addSelectionItems(menu: Menu, info: SelectionInfo, isParagraph = false): void {
@@ -417,15 +486,7 @@ export class EpubView extends FileView {
 			const note = entry.sourcePath.split('/').pop()?.replace(/\.md$/, '') ?? entry.sourcePath;
 			if (entries.length > 1) menu.addItem((i) => (i.setTitle(`Highlight in "${note}"`) as any).setIsLabel?.(true).setSection?.(section));
 			menu.addItem((i) => i.setTitle(`Open in "${note}"`).setIcon('file-text').setSection(section).onClick(() => this.plugin.openSource(entry, this)));
-			menu.addItem((item) => {
-				item.setTitle('Change color').setIcon('palette').setSection(section);
-				const sub: Menu | undefined = (item as MenuItem & { setSubmenu?: () => Menu }).setSubmenu?.();
-				const colors: (string | null)[] = [...this.plugin.settings.palette.map((p) => p.name), null];
-				if (sub) {
-					for (const c of colors)
-						sub.addItem((si) => si.setTitle(this.colorTitle(c)).setChecked((entry.color ?? null) === c).onClick(() => this.plugin.setHighlightColor(entry, c)));
-				} else item.onClick(() => this.showColorMenu(entry));
-			});
+			this.addColorItem(menu, 'Change color', 'palette', section, (c) => this.plugin.setHighlightColor(entry, c), entry.color ?? null);
 			menu.addItem((i) =>
 				i
 					.setTitle('Copy link')
@@ -438,13 +499,6 @@ export class EpubView extends FileView {
 		}
 	}
 
-	private showColorMenu(entry: HighlightEntry): void {
-		const m = new Menu();
-		for (const c of [...this.plugin.settings.palette.map((p) => p.name), null])
-			m.addItem((i) => i.setTitle(this.colorTitle(c)).onClick(() => this.plugin.setHighlightColor(entry, c)));
-		const r = this.hostEl.getBoundingClientRect();
-		m.showAtPosition({ x: r.left + r.width / 2, y: r.top + 80 });
-	}
 
 	// --------------------------------------------------------------------------------------------
 	// Selection bar (mobile: there is no right-click)
@@ -454,25 +508,32 @@ export class EpubView extends FileView {
 	/** CFI of the selection the menu was last shown for (don't re-open it for the same selection). */
 	private lastMenuCfi: string | null = null;
 	private touching = false;
+	/** The selection our mobile menu is acting on (drawn by us while the native one is dropped). */
+	private pendingSelection: Range | null = null;
+	private restoreNativeSelection = false;
+	/** Set while one EPUB++ menu hands over to another (e.g. the color picker). */
+	keepPendingSelection = false;
 
 	/** Mobile has no right-click: open EPUB++'s menu once a selection settles (not while touching). */
 	private scheduleSelectionMenu(sel: SelectionInfo | null): void {
 		window.clearTimeout(this.selectionMenuTimer);
-		if (!Platform.isMobile || !this.plugin.settings.selectionBar) return;
-		if (!sel) {
-			this.lastMenuCfi = null;
-			return;
-		}
+		if (!Platform.isMobile || !this.plugin.settings.selectionBar || !sel) return;
 		this.selectionMenuTimer = window.setTimeout(() => {
 			if (this.touching) return; // touchend reschedules
 			const cur = this.reader?.getSelection();
 			if (!cur || cur.cfi === this.lastMenuCfi) return;
 			this.lastMenuCfi = cur.cfi;
 			this.showSelectionMenu(cur);
-		}, 600);
+		}, 500);
 	}
 
 	private showSelectionMenu(info: SelectionInfo): void {
+		// The OS toolbar is tied to the native selection: drop it while our menu is open and paint the
+		// selected text ourselves instead.
+		this.pendingSelection = info.range;
+		this.reader?.setPendingSelection(info.range);
+		info.range.startContainer.ownerDocument?.getSelection()?.removeAllRanges();
+
 		const menu = new Menu();
 		this.addSelectionItems(menu, info);
 		menu.addItem((i) =>
@@ -480,20 +541,34 @@ export class EpubView extends FileView {
 				.setTitle('System menu')
 				.setIcon('smartphone')
 				.setSection('epp-system')
-				.onClick(() => this.showNativeSelectionMenu(info.range)),
+				.onClick(() => (this.restoreNativeSelection = true)),
 		);
+		menu.onHide(() => this.afterMenuHidden());
 		const r = info.range.getBoundingClientRect();
 		menu.showAtPosition({ x: r.left + r.width / 2, y: r.bottom + 8 });
 	}
 
-	/** Re-apply the selection after our menu closes so the OS shows its own selection toolbar again. */
-	private showNativeSelectionMenu(range: Range): void {
+	/** Called whenever one of our menus closes: finish the selection session unless another menu took over. */
+	afterMenuHidden(): void {
 		window.setTimeout(() => {
-			const sel = range.startContainer.ownerDocument?.getSelection();
-			if (!sel) return;
-			sel.removeAllRanges();
-			sel.addRange(range);
-		}, 150);
+			if (this.keepPendingSelection) {
+				this.keepPendingSelection = false;
+				return;
+			}
+			const range = this.pendingSelection;
+			this.pendingSelection = null;
+			this.reader?.setPendingSelection(null);
+			if (range && this.restoreNativeSelection) {
+				// After the tap on the menu has fully finished, so it can't collapse the selection again.
+				// lastMenuCfi still matches, so this doesn't re-open our menu.
+				window.setTimeout(() => {
+					const sel = range.startContainer.ownerDocument?.getSelection();
+					sel?.removeAllRanges();
+					sel?.addRange(range);
+				}, 250);
+			}
+			this.restoreNativeSelection = false;
+		}, 50);
 	}
 
 	// --------------------------------------------------------------------------------------------
