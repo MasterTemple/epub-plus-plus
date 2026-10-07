@@ -47,6 +47,10 @@ The repo has two packages:
   - **Contents:** the table of contents, tracking the current chapter.
   - **Search:** case / whole word / regex; results are grouped by chapter and step with Enter / Shift+Enter.
   - **Highlights:** all highlights, those in the annotation file, or those elsewhere; grouped by book order, chapter or note, with comments rendered and annotation-file entries labeled by their section heading.
+- **Annotations from other plugins.** Other plugins can mark passages in a book through EPUB++'s API, e.g. [Topos Bible](https://github.com/MasterTemple/topos-bible) marks Bible references.
+  - Each plugin (provider) chooses how its annotations are drawn (a background, a dashed underline, a glow…). They're drawn below your highlights.
+  - Each gets a sidebar tab: its annotations in book order, grouped by chapter, with a filter, Enter / Shift+Enter to step through them, and an eye button to show or hide them in the book.
+  - Right-click one (hold or tap it on mobile) for *Save as highlight* and *Save with comment…*, which insert it into the annotation file (created if needed), plus the provider's own items. Hovering shows the provider's tooltip.
 - **Previews.**
   - EPUB links preview on hover in Reading view, and in the editor without Ctrl/Cmd (toggle under Page preview).
   - Links inside a preview either jump within the preview or open the EPUB tab.
@@ -86,7 +90,31 @@ reader.on('highlight-click', (e, highlights) => …);
 reader.on('contextmenu', (e, { selection, highlights }) => …);
 ```
 
+`BookText.extract(book, { blockSeparator })` gives a book's text per spine item without rendering it, and `cfi(spineIndex, start, end)` turns offsets in that text into the same range CFIs the reader produces. `reader.setLayer(id, specs, { style, priority, hidden })` draws a layer of annotations (painted with static ranges, so thousands are cheap); the reader emits `annotation-click` and `annotation-hover` for them.
+
 The CFI (`parseCfi`, `serializeCfi`, `compareCfi`, `pointToPath`, `resolvePath`), Text Fragment and locator helpers are exported individually.
+
+## Plugin API (for other Obsidian plugins)
+
+Once the workspace event `epub-plus-plus:api-ready` has fired (its argument is the API, also at `app.plugins.plugins['epub-plus-plus'].api`). The types are in `packages/obsidian/src/api.ts`.
+
+```ts
+const api = app.plugins.plugins['epub-plus-plus']?.api;
+const book = await api.extractText(file, { blockSeparator: '\n\n' }); // { sections: [{ spineIndex, href, title, text }], cfi() }
+const cfi = book.cfi(section.spineIndex, start, end);                 // UTF-16 offsets in section.text
+const unregister = api.registerAnnotationProvider({
+  id: 'my-plugin', name: 'Names', icon: 'user',
+  color: 'purple',                                               // palette name or CSS color
+  style: (c) => `text-decoration: underline dotted 2px ${c};`,  // ::highlight() declarations
+  annotations: (file) => [{ id: '1', locator: cfi, label: 'Ishmael' }],
+  onClick: (annotations, event, ctx) => false,                  // true when handled
+  menu: (menu, annotations, ctx) => menu.addItem(…),
+  tooltip: (annotation, ctx) => annotation.label,
+});
+api.refreshAnnotations('my-plugin', [file.path]);               // after they change
+```
+
+`epub-plus-plus:api-unload` fires when EPUB++ unloads; register again on the next `api-ready`. `api.open(file, locator)` opens a book at a locator, and `api.link(file, locator, alias)` builds a link in the user's style.
 
 ## Development
 

@@ -1,13 +1,22 @@
-import { EpubBook, EpubReader, parseLocator, type HighlightSpec, type SelectionInfo, type TocItem } from '@epub-pp/core';
+import { EpubBook, EpubReader, parseLocator, type HighlightSpec, type LayerHit, type SelectionInfo, type TocItem } from '@epub-pp/core';
 import { FileView, Menu, Notice, Platform, Scope, TFile, setIcon, type MenuItem, type WorkspaceLeaf } from 'obsidian';
 import type { HighlightEntry } from './highlight-index';
 import { ANNOTATION_MODES, type AnnotationMode, type HighlightGestureAction } from './settings';
 import type EpubPlusPlus from './main';
-import { HOVER_SOURCE, VIEW_TYPE_EPUB } from './constants';
+import { HOVER_SOURCE, VIEW_TYPE_EPUB, layerId } from './constants';
 import { AppearancePanel } from './appearance';
 import { Sidebar } from './sidebar';
 import { CommentCard } from './comment-card';
 import { askForComment } from './comment-modal';
+import { AnnotationTip } from './annotation-tip';
+import type { AnnotationContext, AnnotationProvider, EpubAnnotation } from './api';
+
+/** Annotations under the pointer, grouped by their provider. */
+interface AnnotationGroup {
+	provider: AnnotationProvider<unknown>;
+	layer: string;
+	annotations: EpubAnnotation[];
+}
 
 export { VIEW_TYPE_EPUB };
 
@@ -27,6 +36,7 @@ export class EpubView extends FileView {
 	private pendingSubpath: string | null = null;
 	private loadToken = 0;
 	private offIndex: (() => void) | null = null;
+	private annotationTip!: AnnotationTip;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -91,6 +101,8 @@ export class EpubView extends FileView {
 		navButton('chevron-down', 'Next result', 1);
 		this.appearance = new AppearancePanel(this.plugin, this.mainEl.createDiv('epp-appearance'));
 		this.commentCard = this.addChild(new CommentCard(this.app, this.mainEl));
+		this.annotationTip = new AnnotationTip(this.mainEl);
+		this.register(() => this.annotationTip.destroy());
 		this.toggleSidebar(!Platform.isMobile && this.plugin.settings.sidebarOpen, false);
 
 		this.offIndex = (() => {
@@ -163,6 +175,7 @@ export class EpubView extends FileView {
 			this.chapterEl.setText(book.metadata.title);
 			this.sidebar.setBook(book);
 			this.refreshHighlights();
+			for (const p of this.plugin.providers.values()) void this.updateProvider(p);
 			const target = this.pendingSubpath ?? s.positions[file.path];
 			this.pendingSubpath = null;
 			if (target) this.navigate(target, !!target.match(/epubcfi|text=/) && target !== s.positions[file.path]);
@@ -181,6 +194,7 @@ export class EpubView extends FileView {
 	override async onRename(file: TFile): Promise<void> {
 		await super.onRename(file);
 		this.refreshHighlights();
+		for (const p of this.plugin.providers.values()) void this.updateProvider(p);
 	}
 
 	private teardown(): void {
@@ -271,12 +285,23 @@ export class EpubView extends FileView {
 				state: { scroll: entry.position.start.line },
 			});
 		});
-		reader.on('contextmenu', (e, { selection, highlights }) => {
+		reader.on('annotation-click', (e, hits) => this.onAnnotationClick(e, hits));
+		reader.on('annotation-hover', (e, hits) => {
+			if (Platform.isMobile) return;
+			const key = hits.map((h) => `${h.layer}:${h.spec.id}`).join('|');
+			this.annotationTip.hover(e, key, () =>
+				this.groupHits(hits)
+					.flatMap((g) => g.annotations.map((a) => (g.provider.tooltip ? g.provider.tooltip(a, this.annotationContext(g.layer, a)) : a.label)))
+					.filter((t): t is string => !!t)
+					.join('\n'),
+			);
+		});
+		reader.on('contextmenu', (e, { selection, highlights, annotations }) => {
 			if (Platform.isMobile) {
 				// Touch browsers fire contextmenu on long-press and when tapping a selection; that's what opens
 				// the OS selection toolbar. After "System menu", leave it alone so the OS menu can open.
 				if (this.nativeSelectionMode) return;
-				if (highlights.length) {
+				if (highlights.length || annotations.length) {
 					// Long-press on a highlight (Android fires contextmenu; the hold timer may have run already).
 					e.preventDefault();
 					if (Date.now() - this.lastHold > 1000) this.onHold(e.clientX, e.clientY);
@@ -295,11 +320,13 @@ export class EpubView extends FileView {
 				if (!highlights.length) return; // plain long-press on text: let the OS select it
 			}
 			const info = selection ?? this.paragraphAt(e);
-			if (!info && !highlights.length) return;
+			if (!info && !highlights.length && !annotations.length) return;
 			e.preventDefault();
+			this.annotationTip.hide();
 			const menu = new Menu();
 			if (info) this.addSelectionItems(menu, info, !selection);
 			if (highlights.length) this.addHighlightItems(menu, highlights.map((h) => h.data as HighlightEntry));
+			if (annotations.length) this.addAnnotationItems(menu, annotations);
 			menu.showAtMouseEvent(e);
 		});
 		reader.on('selectionchange', (sel) => this.scheduleSelectionMenu(sel));
@@ -326,6 +353,105 @@ export class EpubView extends FileView {
 		const specs: HighlightSpec<HighlightEntry>[] = entries.map((e) => ({ id: e.id, locator: e.locator, color: e.color, data: e }));
 		this.reader.setHighlights(specs);
 		this.sidebar.setHighlights(all);
+	}
+
+	// --------------------------------------------------------------------------------------------
+	// Annotations from other plugins (see api.ts)
+	// --------------------------------------------------------------------------------------------
+
+	/** Fetch a provider's annotations for this book and show them (drawn unless the user hid them). */
+	async updateProvider(provider: AnnotationProvider<unknown>): Promise<void> {
+		const reader = this.reader;
+		const file = this.file;
+		if (!reader?.isRendered || !file) return;
+		let list: EpubAnnotation[];
+		try {
+			list = await provider.annotations(file);
+		} catch (e) {
+			console.error(`[epub-pp] annotation provider ${provider.id} failed`, e);
+			list = [];
+		}
+		if (this.reader !== reader || this.file !== file || this.plugin.providers.get(provider.id) !== provider) return;
+		const specs: HighlightSpec<EpubAnnotation>[] = list.map((a) => ({ id: a.id, locator: a.locator, color: a.color ?? provider.color, data: a }));
+		const hidden = this.plugin.settings.hiddenProviders.includes(provider.id);
+		reader.setLayer(layerId(provider.id), specs, { style: provider.style, hidden });
+		this.sidebar.setProvider(provider, hidden);
+	}
+
+	removeProvider(id: string): void {
+		this.reader?.removeLayer(layerId(id));
+		this.sidebar.removeProvider(id);
+	}
+
+	private groupHits(hits: LayerHit[]): AnnotationGroup[] {
+		const groups = new Map<string, AnnotationGroup>();
+		for (const h of hits) {
+			const provider = this.plugin.providers.get(h.layer.replace(/^provider:/, ''));
+			if (!provider) continue;
+			let g = groups.get(h.layer);
+			if (!g) groups.set(h.layer, (g = { provider, layer: h.layer, annotations: [] }));
+			g.annotations.push(h.spec.data as EpubAnnotation);
+		}
+		return [...groups.values()];
+	}
+
+	annotationContext(layer: string, a: EpubAnnotation): AnnotationContext {
+		const range = this.reader?.layerRange(layer, a.id) ?? null;
+		return {
+			file: this.file!,
+			text: range?.toString().replace(/\s+/g, ' ').trim() ?? '',
+			chapter: (range && this.reader?.tocItemAt(range)?.label) || null,
+		};
+	}
+
+	private onAnnotationClick(e: MouseEvent, hits: LayerHit[]): void {
+		const group = this.groupHits(hits)[0];
+		if (!group) return;
+		const handled = () => !!group.provider.onClick?.(group.annotations, e, this.annotationContext(group.layer, group.annotations[0]));
+		if (!Platform.isMobile) {
+			handled();
+			return;
+		}
+		// As with highlights: this tap may be the first half of a double tap, or the end of a hold.
+		const tappedAt = Date.now();
+		if (tappedAt - this.lastHold < 1000) return;
+		const at = { x: e.clientX, y: e.clientY };
+		window.setTimeout(() => {
+			if (this.lastDoubleTap >= tappedAt) return;
+			if (!handled()) this.showAnnotationMenu(hits, at);
+		}, 320);
+	}
+
+	private showAnnotationMenu(hits: LayerHit[], at: { x: number; y: number }): void {
+		const menu = new Menu();
+		this.addAnnotationItems(menu, hits);
+		menu.onHide(() => this.afterMenuHidden());
+		menu.showAtPosition(at);
+	}
+
+	/** "Save as highlight" / "Save with comment" for each annotation, then the provider's own items. */
+	addAnnotationItems(menu: Menu, hits: LayerHit[]): void {
+		const groups = this.groupHits(hits);
+		const many = groups.reduce((n, g) => n + g.annotations.length, 0) > 1;
+		for (const g of groups) {
+			for (const a of g.annotations) {
+				const section = `epp-ann-${g.provider.id}-${a.id}`;
+				if (many) menu.addItem((i) => (i.setTitle(`${g.provider.name}: ${a.label}`) as any).setIsLabel?.(true).setSection?.(section));
+				this.addColorItem(menu, 'Save as highlight', 'highlighter', section, (c) => this.plugin.saveAnnotation(this, g.layer, a, c, false));
+				menu.addItem((i) =>
+					i
+						.setTitle('Save with comment…')
+						.setIcon('message-square-plus')
+						.setSection(section)
+						.onClick(() => this.plugin.saveAnnotation(this, g.layer, a, this.activeColor, true)),
+				);
+			}
+			try {
+				g.provider.menu?.(menu, g.annotations, this.annotationContext(g.layer, g.annotations[0]));
+			} catch (e) {
+				console.error(`[epub-pp] annotation provider ${g.provider.id} menu failed`, e);
+			}
+		}
 	}
 
 	/**
@@ -425,12 +551,14 @@ export class EpubView extends FileView {
 	/** A long press: when it is on a highlight, run the configured action and keep the OS selection away. */
 	private onHold(x: number, y: number): void {
 		const hits = this.reader?.highlightsAt(x, y) ?? [];
-		if (!hits.length) return;
+		const annotations = hits.length ? [] : (this.reader?.layerHitsAt(x, y) ?? []);
+		if (!hits.length && !annotations.length) return;
 		this.lastHold = Date.now();
 		window.clearTimeout(this.selectionMenuTimer);
 		const doc = this.contentEl.doc;
 		// The OS starts selecting the word under a long press; drop that selection.
 		for (const ms of [0, 120, 400]) window.setTimeout(() => doc.getSelection()?.removeAllRanges(), ms);
+		if (annotations.length) return this.showAnnotationMenu(annotations, { x, y });
 		this.runHighlightGesture(this.plugin.settings.highlightHold, hits.map((h) => h.data as HighlightEntry), { x, y });
 	}
 

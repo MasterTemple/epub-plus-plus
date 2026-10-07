@@ -42,7 +42,10 @@ export function child(el: Element | Document, localName: string): Element | null
 }
 
 export function descendants(el: Element | Document, localName: string): Element[] {
-	return Array.from(el.getElementsByTagNameNS('*', localName));
+	const found = Array.from(el.getElementsByTagNameNS('*', localName));
+	if (found.length) return found;
+	// DOMs without wildcard namespace support (happy-dom, used by the tests).
+	return Array.from(el.getElementsByTagName('*')).filter((e) => e.localName === localName);
 }
 
 export function textOf(el: Element | null | undefined): string {

@@ -20,12 +20,14 @@ packages/core/       @epub-pp/core — framework-agnostic engine (no Obsidian im
   css/rewrite.ts     publisher CSS → shadow-root CSS (scoping, font scaling, var() fallbacks, @font-face lifting)
   locators/          cfi.ts (parse/serialize/compare, DOM↔CFI), text-fragment.ts, locator.ts (subpath parsing)
   render/            reader.ts (EpubReader), content.ts (spine item → DOM), settings.ts (themes/base CSS), markdown.ts
+  book/extract.ts    BookText: per-spine-item text without rendering, offsets → CFIs (for other plugins)
   search/            text-index.ts (normalized/folded text ↔ DOM map), search.ts
 packages/obsidian/   the plugin (id `epub-plus-plus`)
   main.ts            plugin: settings, link interception (openLinkText patch), copy, annotations, commands
   view.ts            EpubView (FileView): toolbar, menus, touch gestures, selection menu (mobile)
   sidebar.ts         Contents / Search / Highlights tabs
   highlight-index.ts vault links → highlights (+ comments, headings) per EPUB
+  api.ts             public API for other plugins: extractText, annotation providers (reader layers, sidebar tabs)
   annotations.ts     annotation files (create, find by `epub` frontmatter, insert)
   annotation-utils.ts / comment-utils.ts / link-utils.ts   pure, unit-tested text logic
   embed.ts           embed registry: ![[book.epub#…]] and hover previews
@@ -73,6 +75,7 @@ bun scripts/cdp-input.ts --tap x,y | --dbltap x,y | --hold x,y | --swipe x1,y1,x
   - Obsidian sets `user-select: none` on `<body>`, so the scroller forces `user-select: text`.
   - `rem` units refer to Obsidian's root, so they're rewritten.
   - `@font-face` doesn't work inside shadow roots, so it's lifted to the document.
+- **Annotation layers** (other plugins' annotations, `reader.setLayer`) can number thousands: they're StaticRanges, hit-tested only against those bucketed under the element at the pointer. `BookText` CFIs must equal the reader's: both walk the original document structure (rendering imports it unchanged).
 - **Live Ranges are expensive:** Chromium updates every live Range on every DOM mutation. Use `StaticRange` for bulk painting (search results). Keep live ranges for user highlights only, since those are few and need hit-testing.
 - **Per-window globals:** `CSS.highlights` and `Highlight` belong to each window. `EpubReader` uses its host's `doc` / `win`, and the view rebuilds the reader on `onWindowMigrated` (tab dragged to a popout).
 - **Scroll position:** moving or hiding the host resets `scrollTop`. The reader keeps an anchor Range and restores it via a ResizeObserver (on reappear or width change).

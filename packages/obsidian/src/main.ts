@@ -1,4 +1,4 @@
-import { EpubBook, formatLocator, type ReaderSettings, type SelectionInfo } from '@epub-pp/core';
+import { BookText, EpubBook, formatLocator, type ReaderSettings, type SelectionInfo } from '@epub-pp/core';
 import { around } from 'monkey-around';
 import {
 	MarkdownView,
@@ -23,6 +23,7 @@ import { EppSettingTab } from './setting-tab';
 import { EpubView, VIEW_TYPE_EPUB } from './view';
 
 import { EDITOR_HOVER_SOURCE, HOVER_SOURCE } from './constants';
+import { API_READY_EVENT, API_UNLOAD_EVENT, type AnnotationProvider, type EpubAnnotation, type EpubPlusPlusApi } from './api';
 
 export type CopyTarget = CopyFormat | 'link' | 'alt-link' | 'text';
 
@@ -30,6 +31,10 @@ export default class EpubPlusPlus extends Plugin {
 	declare settings: EppSettings;
 	index!: HighlightIndex;
 	annotations = new Annotations(this);
+	/** Annotation providers registered by other plugins, by id. */
+	readonly providers = new Map<string, AnnotationProvider<unknown>>();
+	/** For other plugins: see `api.ts`. */
+	api!: EpubPlusPlusApi;
 	private calloutStyle: HTMLStyleElement | null = null;
 	private savePositionsTimer = 0;
 
@@ -51,6 +56,99 @@ export default class EpubPlusPlus extends Plugin {
 		this.updateCalloutStyles();
 		this.registerBacklinkHover();
 		this.updatePreviews();
+		this.api = this.createApi();
+		this.app.workspace.onLayoutReady(() => this.app.workspace.trigger(API_READY_EVENT, this.api));
+	}
+
+	// --------------------------------------------------------------------------------------------
+	// API for other plugins (annotation providers)
+	// --------------------------------------------------------------------------------------------
+
+	private createApi(): EpubPlusPlusApi {
+		return {
+			version: 1,
+			extractText: async (file, opts) => {
+				const book = await EpubBook.open(await this.app.vault.readBinary(file));
+				try {
+					const text = await BookText.extract(book, opts);
+					const titles = new Map<string, string>();
+					for (const t of book.flatToc) {
+						const path = t.href?.split('#')[0];
+						if (path && t.label && !titles.has(path)) titles.set(path, t.label);
+					}
+					const sections = text.sections.map((s) => ({ ...s, title: titles.get(s.href) ?? null }));
+					return { sections, cfi: (spine, start, end, o) => text.cfi(spine, start, end, o) };
+				} finally {
+					book.destroy();
+				}
+			},
+			registerAnnotationProvider: (provider) => {
+				const p = provider as AnnotationProvider<unknown>;
+				this.providers.set(p.id, p);
+				for (const v of this.epubViews()) v.updateProvider(p);
+				return () => {
+					if (this.providers.get(p.id) !== p) return;
+					this.providers.delete(p.id);
+					for (const v of this.epubViews()) v.removeProvider(p.id);
+				};
+			},
+			refreshAnnotations: (providerId, paths) => {
+				const p = this.providers.get(providerId);
+				if (!p) return;
+				for (const v of this.epubViews()) if (v.file && (!paths || paths.includes(v.file.path))) v.updateProvider(p);
+			},
+			open: (file, locator) => this.openEpub(file, locator ?? ''),
+			link: (file, locator, alias, sourcePath) => this.epubLink(file, locator, alias, null, sourcePath),
+		};
+	}
+
+	/** Show or hide a provider's annotations in books (the sidebar still lists them). */
+	async setProviderHidden(id: string, hidden: boolean): Promise<void> {
+		const set = new Set(this.settings.hiddenProviders);
+		if (hidden) set.add(id);
+		else set.delete(id);
+		this.settings.hiddenProviders = [...set];
+		await this.saveSettings();
+		const p = this.providers.get(id);
+		if (p) for (const v of this.epubViews()) v.updateProvider(p);
+	}
+
+	/** What "Save as highlight" inserts: the chosen format, else the first one without a comment. */
+	saveFormat(): CopyTarget {
+		return this.resolveCopyAction(this.settings.saveAnnotationAs) ?? this.settings.copyFormats.find((f) => !needsComment(f.template)) ?? 'link';
+	}
+
+	/**
+	 * Turn another plugin's annotation into a real highlight: insert it into the book's annotation
+	 * file (created if needed), as the "save as" format or, with a comment, the comment format.
+	 */
+	async saveAnnotation(view: EpubView, layerId: string, annotation: EpubAnnotation, color: string | null, withComment: boolean): Promise<void> {
+		const range = view.reader?.layerRange(layerId, annotation.id);
+		const info = range && view.reader?.describeRange(range);
+		if (!info || !view.file) {
+			new Notice('EPUB++: could not find this passage in the book.');
+			return;
+		}
+		let what: CopyTarget | null;
+		let comment = '';
+		if (withComment) {
+			const c = await askForComment(this.app, info.text);
+			if (c === null) return;
+			comment = c;
+			what = this.settings.copyFormats.find((f) => needsComment(f.template)) ?? { id: '', name: 'Callout with comment', template: COMMENT_TEMPLATE };
+		} else what = this.saveFormat();
+		if (what === 'text') what = 'link';
+		const text = this.renderCopy(view, info, what, color, comment, { label: annotation.label });
+		try {
+			let ann = this.annotations.find(view.file);
+			if (!ann) {
+				ann = await this.annotations.create(view);
+				new Notice(`Created ${ann.path}`);
+			}
+			await this.addToAnnotationFile(view, ann, info, text, false);
+		} catch (e) {
+			new Notice(`EPUB++: ${(e as Error).message}`);
+		}
 	}
 
 	private registerEditorHover(): void {
@@ -127,6 +225,8 @@ export default class EpubPlusPlus extends Plugin {
 	}
 
 	override onunload(): void {
+		this.app.workspace.trigger(API_UNLOAD_EVENT);
+		this.providers.clear();
 		this.calloutStyle?.remove();
 		this.unregisterEmbeds?.();
 		for (const { book } of this.books.values()) book.then((b) => b.destroy()).catch(() => {});
@@ -407,10 +507,10 @@ export default class EpubPlusPlus extends Plugin {
 	}
 
 	/** Build a link to a selection. `alternate` swaps the configured link type (CFI ↔ text fragment). */
-	buildLink(view: EpubView, info: SelectionInfo, color: string | null, alternate = false): string {
+	buildLink(view: EpubView, info: SelectionInfo, color: string | null, alternate = false, extra: Record<string, string> = {}): string {
 		const useText = (this.settings.linkType === 'text') !== alternate;
 		const locator = (useText && info.textFragment()) || info.cfi;
-		const alias = renderTemplate(this.settings.aliasTemplate, this.templateVars(view, info, color, ''));
+		const alias = renderTemplate(this.settings.aliasTemplate, { ...this.templateVars(view, info, color, ''), ...extra });
 		return this.epubLink(view.file!, locator, alias, this.settings.colorInLinks ? color : null);
 	}
 
@@ -461,10 +561,11 @@ export default class EpubPlusPlus extends Plugin {
 	}
 
 	/** The clipboard text for a selection (synchronous, so it can run inside a `copy` event). */
-	renderCopy(view: EpubView, info: SelectionInfo, what: CopyTarget, color: string | null, comment = ''): string {
+	/** `extra`: more template variables, e.g. `{{label}}` when saving another plugin's annotation. */
+	renderCopy(view: EpubView, info: SelectionInfo, what: CopyTarget, color: string | null, comment = '', extra: Record<string, string> = {}): string {
 		if (what === 'text') return this.selectionText(info);
-		const link = this.buildLink(view, info, color, what === 'alt-link');
-		return typeof what === 'string' ? link : renderTemplate(what.template, { ...this.templateVars(view, info, color, link), comment });
+		const link = this.buildLink(view, info, color, what === 'alt-link', extra);
+		return typeof what === 'string' ? link : renderTemplate(what.template, { ...this.templateVars(view, info, color, link), ...extra, comment });
 	}
 
 	/** True when copying with this target first asks for a comment ({{comment}} in the template). */

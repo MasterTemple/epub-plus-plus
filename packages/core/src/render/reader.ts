@@ -32,6 +32,36 @@ export interface HighlightSpec<T = unknown> {
 	data?: T;
 }
 
+/** How an annotation layer is drawn and ordered (see `setLayer`). */
+export interface AnnotationLayerOptions {
+	/**
+	 * CSS declarations for `::highlight()`, given an annotation's resolved color (only `color`,
+	 * `background-color`, `text-decoration*`, `text-shadow` and `-webkit-text-*` apply there).
+	 * Default: a background like highlights have.
+	 */
+	style?: (color: string) => string;
+	/** Paint order; highlights are 0. Default -1 (below highlights). */
+	priority?: number;
+	/** Keep the layer (for `describeLayer`) without drawing it or reporting it under the pointer. */
+	hidden?: boolean;
+}
+
+/** An annotation of a layer under the pointer. */
+export interface LayerHit<T = unknown> {
+	layer: string;
+	spec: HighlightSpec<T>;
+}
+
+interface Layer {
+	key: number;
+	opts: AnnotationLayerOptions;
+	items: { spec: HighlightSpec; range: StaticRange | null }[];
+	/** Element → indices of items starting, ending or contained in it (for hit-testing). */
+	buckets: Map<Element, number[]>;
+	resolved: boolean;
+	names: string[];
+}
+
 export interface SelectionInfo {
 	range: Range;
 	text: string;
@@ -66,7 +96,11 @@ type ReaderEvents = {
 	'highlight-click': [MouseEvent, HighlightSpec[]];
 	/** Fired when the highlights under the pointer change (empty array: left all highlights). */
 	'highlight-hover': [MouseEvent, HighlightSpec[]];
-	contextmenu: [MouseEvent, { selection: SelectionInfo | null; highlights: HighlightSpec[] }];
+	contextmenu: [MouseEvent, { selection: SelectionInfo | null; highlights: HighlightSpec[]; annotations: LayerHit[] }];
+	/** A click on annotations of layers (and on no highlight). */
+	'annotation-click': [MouseEvent, LayerHit[]];
+	/** Fired when the annotations under the pointer change (empty array: left them). */
+	'annotation-hover': [MouseEvent, LayerHit[]];
 	'external-link': [MouseEvent, string];
 	selectionchange: [SelectionInfo | null];
 };
@@ -150,6 +184,11 @@ export class EpubReader extends Emitter<ReaderEvents> {
 	private anchorPosition: 'top' | 'center' = 'top';
 	private hostSize = { w: 0, h: 0 };
 	private lastHover: string = '';
+	private lastLayerHover: string = '';
+	private layers = new Map<string, Layer>();
+	private layerCounter = 0;
+	private layerStyle: HTMLStyleElement;
+	private hitRange: Range | null = null;
 
 	constructor(
 		readonly host: HTMLElement,
@@ -181,7 +220,8 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		this.content.lang = book.metadata.language || '';
 		this.scroller.appendChild(this.content);
 		this.flashStyle = this.doc.createElement('style');
-		this.shadow.append(base, this.highlightStyle, this.flashStyle, this.scroller);
+		this.layerStyle = this.doc.createElement('style');
+		this.shadow.append(base, this.highlightStyle, this.layerStyle, this.flashStyle, this.scroller);
 		this.applySettings();
 		this.bindEvents();
 	}
@@ -274,6 +314,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		this.content.appendChild(frag);
 		this.rendered = true;
 		this.updateHighlightStyles();
+		this.paintLayers();
 		this.emit('ready');
 	}
 
@@ -311,6 +352,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		this.palette = palette;
 		if (defaultColor) this.defaultColor = defaultColor;
 		this.refreshHighlights();
+		this.paintLayers();
 	}
 
 	// ---------------------------------------------------------------------------------------------
@@ -778,6 +820,156 @@ export class EpubReader extends Emitter<ReaderEvents> {
 	}
 
 	// ---------------------------------------------------------------------------------------------
+	// Annotation layers
+	// ---------------------------------------------------------------------------------------------
+
+	/**
+	 * Show a layer of annotations, e.g. ones another tool found in the book. Unlike highlights there
+	 * may be thousands, so they are painted with static ranges and hit-tested by element. Calling it
+	 * again with the same id replaces the layer.
+	 */
+	setLayer(id: string, specs: HighlightSpec[], opts: AnnotationLayerOptions = {}): void {
+		const prev = this.layers.get(id);
+		const layer: Layer = { key: prev?.key ?? ++this.layerCounter, opts, items: specs.map((spec) => ({ spec, range: null })), buckets: new Map(), resolved: false, names: prev?.names ?? [] };
+		this.layers.set(id, layer);
+		this.paintLayers();
+	}
+
+	removeLayer(id: string): void {
+		const layer = this.layers.get(id);
+		if (!layer) return;
+		for (const name of layer.names) this.registry?.delete(name);
+		this.layers.delete(id);
+		this.paintLayers();
+	}
+
+	getLayer(id: string): HighlightSpec[] {
+		return this.layers.get(id)?.items.map((i) => i.spec) ?? [];
+	}
+
+	/** A live range for an annotation of a layer (null when its locator doesn't resolve). */
+	layerRange(layerId: string, specId: string): Range | null {
+		const layer = this.layers.get(layerId);
+		if (!layer) return null;
+		this.resolveLayer(layer);
+		const r = layer.items.find((i) => i.spec.id === specId)?.range;
+		if (!r) return null;
+		const range = this.doc.createRange();
+		range.setStart(r.startContainer, r.startOffset);
+		range.setEnd(r.endContainer, r.endOffset);
+		return range;
+	}
+
+	/**
+	 * A layer's annotations in book order, each with its text and chapter. Annotations whose locator
+	 * doesn't resolve come last, with null text.
+	 */
+	describeLayer(id: string): { spec: HighlightSpec; text: string | null; tocItem: TocItem | null }[] {
+		const layer = this.layers.get(id);
+		if (!layer) return [];
+		this.resolveLayer(layer);
+		const a = this.doc.createRange();
+		const b = this.doc.createRange();
+		const set = (r: Range, s: StaticRange) => {
+			r.setStart(s.startContainer, s.startOffset);
+			r.setEnd(s.endContainer, s.endOffset);
+		};
+		const items = layer.items.filter((i) => i.range).sort((x, y) => {
+			set(a, x.range!);
+			set(b, y.range!);
+			return a.compareBoundaryPoints(Range.START_TO_START, b) || a.compareBoundaryPoints(Range.END_TO_END, b);
+		});
+		const out: { spec: HighlightSpec; text: string | null; tocItem: TocItem | null }[] = items.map((i) => {
+			set(a, i.range!);
+			return { spec: i.spec, text: a.toString().replace(/\s+/g, ' ').trim(), tocItem: this.tocItemAt(i.range!) };
+		});
+		for (const i of layer.items) if (!i.range) out.push({ spec: i.spec, text: null, tocItem: null });
+		a.detach();
+		b.detach();
+		return out;
+	}
+
+	private resolveLayer(layer: Layer): void {
+		if (layer.resolved || !this.rendered) return;
+		layer.resolved = true;
+		const add = (el: Element | null, i: number) => {
+			if (!el) return;
+			const list = layer.buckets.get(el);
+			if (list) {
+				if (list[list.length - 1] !== i) list.push(i);
+			} else layer.buckets.set(el, [i]);
+		};
+		const elementOf = (n: Node) => (n.nodeType === 1 ? (n as Element) : n.parentElement);
+		layer.items.forEach((item, i) => {
+			const r = this.cachedRange(item.spec.locator);
+			if (!r) return;
+			item.range = new StaticRange({ startContainer: r.startContainer, startOffset: r.startOffset, endContainer: r.endContainer, endOffset: r.endOffset });
+			add(elementOf(r.startContainer), i);
+			add(elementOf(r.endContainer), i);
+			add(elementOf(r.commonAncestorContainer), i);
+		});
+		// Live ranges slow down every DOM mutation; the static ones above are what layers keep.
+		for (const item of layer.items) this.rangeCache.delete(item.spec.locator);
+	}
+
+	private paintLayers(): void {
+		if (!this.rendered || !this.HighlightCtor) return;
+		const pct = Math.round(this.highlightOpacity * 100);
+		const rules: string[] = [];
+		for (const layer of this.layers.values()) {
+			this.resolveLayer(layer);
+			for (const name of layer.names) this.registry!.delete(name);
+			layer.names = [];
+			if (layer.opts.hidden) continue;
+			const groups = new Map<string, { css: string; ranges: StaticRange[] }>();
+			for (const item of layer.items) {
+				if (!item.range) continue;
+				const { key, css } = this.colorKey(item.spec.color);
+				let g = groups.get(key);
+				if (!g) groups.set(key, (g = { css, ranges: [] }));
+				g.ranges.push(item.range);
+			}
+			for (const [key, g] of groups) {
+				const name = this.hlName(`layer${layer.key}-${key}`);
+				const h = new this.HighlightCtor!(...g.ranges);
+				h.priority = layer.opts.priority ?? -1;
+				this.registry!.set(name, h);
+				layer.names.push(name);
+				const style = layer.opts.style?.(g.css) ?? `background-color: color-mix(in srgb, ${g.css} ${pct}%, transparent);`;
+				rules.push(`::highlight(${name}) { ${style} }`);
+			}
+		}
+		this.layerStyle.textContent = rules.join('\n');
+	}
+
+	/** Annotations of all layers under a viewport point. */
+	layerHitsAt(x: number, y: number): LayerHit[] {
+		if (!this.layers.size) return [];
+		let el: Element | null = (this.shadow as unknown as DocumentOrShadowRoot).elementFromPoint?.(x, y) ?? null;
+		if (!el || !this.content.contains(el)) return [];
+		const chain: Element[] = [];
+		for (; el && el !== this.content; el = el.parentElement) chain.push(el);
+		const range = (this.hitRange ??= this.doc.createRange());
+		const out: LayerHit[] = [];
+		for (const [id, layer] of this.layers) {
+			if (layer.opts.hidden) continue;
+			this.resolveLayer(layer);
+			const seen = new Set<number>();
+			for (const e of chain) {
+				for (const i of layer.buckets.get(e) ?? []) {
+					if (seen.has(i)) continue;
+					seen.add(i);
+					const r = layer.items[i].range!;
+					range.setStart(r.startContainer, r.startOffset);
+					range.setEnd(r.endContainer, r.endOffset);
+					if (rectsContain(range, x, y, 1)) out.push({ layer: id, spec: layer.items[i].spec });
+				}
+			}
+		}
+		return out;
+	}
+
+	// ---------------------------------------------------------------------------------------------
 	// Search
 	// ---------------------------------------------------------------------------------------------
 
@@ -861,7 +1053,12 @@ export class EpubReader extends Emitter<ReaderEvents> {
 			const sel = this.getSelectionRange();
 			if (sel) return;
 			const hits = this.highlightsAt(e.clientX, e.clientY);
-			if (hits.length) this.emit('highlight-click', e, hits);
+			if (hits.length) {
+				this.emit('highlight-click', e, hits);
+				return;
+			}
+			const annotations = this.layerHitsAt(e.clientX, e.clientY);
+			if (annotations.length) this.emit('annotation-click', e, annotations);
 		});
 
 		on(this.scroller, 'contextmenu', (e) => {
@@ -869,25 +1066,36 @@ export class EpubReader extends Emitter<ReaderEvents> {
 			let selection = range ? this.describeRange(range) : null;
 			// Ignore a selection that isn't under the pointer.
 			if (selection && !rectsContain(selection.range, e.clientX, e.clientY)) selection = null;
-			this.emit('contextmenu', e, { selection, highlights: this.highlightsAt(e.clientX, e.clientY) });
+			this.emit('contextmenu', e, { selection, highlights: this.highlightsAt(e.clientX, e.clientY), annotations: this.layerHitsAt(e.clientX, e.clientY) });
 		});
 
 		let hoverRaf = 0;
 		on(this.scroller, 'mouseleave', (e) => {
-			if (!this.lastHover) return;
-			this.lastHover = '';
-			this.emit('highlight-hover', e, []);
+			if (this.lastHover) {
+				this.lastHover = '';
+				this.emit('highlight-hover', e, []);
+			}
+			if (this.lastLayerHover) {
+				this.lastLayerHover = '';
+				this.emit('annotation-hover', e, []);
+			}
 		});
 		on(this.scroller, 'mousemove', (e) => {
-			if (hoverRaf || !this.highlights.length) return;
+			if (hoverRaf || (!this.highlights.length && !this.layers.size)) return;
 			hoverRaf = this.win.requestAnimationFrame(() => {
 				hoverRaf = 0;
 				const hits = this.highlightsAt(e.clientX, e.clientY);
-				this.scroller.style.cursor = hits.length ? 'pointer' : '';
+				const annotations = this.layerHitsAt(e.clientX, e.clientY);
+				this.scroller.style.cursor = hits.length || annotations.length ? 'pointer' : '';
 				const key = hits.map((h) => h.id).join('|');
 				if (key !== this.lastHover) {
 					this.lastHover = key;
 					this.emit('highlight-hover', e, hits); // empty when leaving highlights
+				}
+				const layerKey = annotations.map((a) => `${a.layer}:${a.spec.id}`).join('|');
+				if (layerKey !== this.lastLayerHover) {
+					this.lastLayerHover = layerKey;
+					this.emit('annotation-hover', e, annotations);
 				}
 			});
 		});
@@ -925,6 +1133,7 @@ export class EpubReader extends Emitter<ReaderEvents> {
 		this.win.cancelAnimationFrame(this.flashRaf);
 		for (const fn of this.cleanup) fn();
 		for (const name of this.highlightNames) this.registry?.delete(name);
+		for (const layer of this.layers.values()) for (const name of layer.names) this.registry?.delete(name);
 		for (const k of ['flash', 'search', 'search-current', 'hover', 'pending']) this.registry?.delete(this.hlName(k));
 		this.fontStyle?.remove();
 		this.shadow.replaceChildren();
@@ -959,8 +1168,8 @@ function rangeRect(range: Range): DOMRect | null {
 	return el?.getBoundingClientRect() ?? null;
 }
 
-function rectsContain(range: Range, x: number, y: number): boolean {
-	for (const r of Array.from(range.getClientRects())) if (x >= r.left - 2 && x <= r.right + 2 && y >= r.top - 2 && y <= r.bottom + 2) return true;
+function rectsContain(range: Range, x: number, y: number, slack = 2): boolean {
+	for (const r of Array.from(range.getClientRects())) if (x >= r.left - slack && x <= r.right + slack && y >= r.top - slack && y <= r.bottom + slack) return true;
 	return false;
 }
 

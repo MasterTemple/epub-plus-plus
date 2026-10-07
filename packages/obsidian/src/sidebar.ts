@@ -1,9 +1,12 @@
 import { type EpubBook, type SearchResult, type TocItem } from '@epub-pp/core';
 import { Component, MarkdownRenderer, Platform, debounce, setIcon, type TFile } from 'obsidian';
 import type { HighlightEntry } from './highlight-index';
+import type { AnnotationProvider, EpubAnnotation } from './api';
+import { layerId } from './constants';
 import type { EpubView } from './view';
 
-type Tab = 'toc' | 'search' | 'highlights';
+/** `toc`, `search`, `highlights`, or `provider:<id>` for another plugin's annotations. */
+type Tab = string;
 
 /** In-view sidebar (PDF++-style): table of contents, search, and highlights in this book. */
 export class Sidebar {
@@ -18,24 +21,20 @@ export class Sidebar {
 	private current = -1;
 	private opts = { caseSensitive: false, wholeWord: false, regex: false };
 	private highlightsEl: HTMLElement;
+	private header: HTMLElement;
+	private body: HTMLElement;
+	private activeTab: Tab = 'toc';
+	private providerPanels = new Map<string, ProviderPanel>();
 
 	constructor(
 		private view: EpubView,
 		private el: HTMLElement,
 	) {
-		const header = el.createDiv('epp-sidebar-tabs');
-		const body = el.createDiv('epp-sidebar-body');
-		const addTab = (id: Tab, icon: string, label: string) => {
-			const button = header.createDiv({ cls: 'clickable-icon epp-sidebar-tab', attr: { 'aria-label': label } });
-			setIcon(button, icon);
-			button.addEventListener('click', () => this.showTab(id));
-			const panel = body.createDiv(`epp-panel epp-panel-${id}`);
-			this.tabs.set(id, { button, panel });
-			return panel;
-		};
-		this.tocEl = addTab('toc', 'list-tree', 'Contents');
-		this.buildSearch(addTab('search', 'search', 'Search'));
-		this.highlightsEl = addTab('highlights', 'highlighter', 'Highlights');
+		const header = (this.header = el.createDiv('epp-sidebar-tabs'));
+		this.body = el.createDiv('epp-sidebar-body');
+		this.tocEl = this.addTab('toc', 'list-tree', 'Contents');
+		this.buildSearch(this.addTab('search', 'search', 'Search'));
+		this.highlightsEl = this.addTab('highlights', 'highlighter', 'Highlights');
 		if (Platform.isMobile) {
 			const close = header.createDiv({ cls: 'clickable-icon epp-sidebar-close', attr: { 'aria-label': 'Close' } });
 			setIcon(close, 'x');
@@ -44,12 +43,50 @@ export class Sidebar {
 		this.showTab('toc');
 	}
 
+	private addTab(id: Tab, icon: string, label: string): HTMLElement {
+		const button = createDiv({ cls: 'clickable-icon epp-sidebar-tab', attr: { 'aria-label': label } });
+		// Provider tabs go after the built-in ones, before the mobile close button.
+		this.header.insertBefore(button, this.header.querySelector('.epp-sidebar-close'));
+		setIcon(button, icon);
+		button.addEventListener('click', () => this.showTab(id));
+		const panel = this.body.createDiv(`epp-panel epp-panel-${id.replace(/[^\w-]/g, '_')}`);
+		this.tabs.set(id, { button, panel });
+		return panel;
+	}
+
+	/** Add or update the tab of an annotation provider for the current book. */
+	setProvider(provider: AnnotationProvider<unknown>, hidden: boolean): void {
+		const id = layerId(provider.id);
+		let panel = this.providerPanels.get(id);
+		if (!panel) {
+			panel = new ProviderPanel(this.view, provider, this.addTab(id, provider.icon ?? 'sparkles', provider.name), () => this.activeTab === id);
+			this.providerPanels.set(id, panel);
+		}
+		panel.provider = provider;
+		panel.update(hidden);
+	}
+
+	removeProvider(providerId: string): void {
+		const id = layerId(providerId);
+		const t = this.tabs.get(id);
+		if (!t) return;
+		t.button.remove();
+		t.panel.remove();
+		this.tabs.delete(id);
+		this.providerPanels.delete(id);
+		if (this.activeTab === id) this.showTab('toc');
+	}
+
 	showTab(id: Tab): void {
+		if (!this.tabs.has(id)) id = 'toc';
+		this.activeTab = id;
 		for (const [k, t] of this.tabs) {
 			t.button.toggleClass('is-active', k === id);
 			t.panel.toggleClass('is-active', k === id);
 		}
-		this.view.setSearchNavVisible(id === 'search' && this.results.length > 0);
+		const provider = this.providerPanels.get(id);
+		this.view.setSearchNavVisible((id === 'search' && this.results.length > 0) || (!!provider && provider.count > 0));
+		provider?.render();
 		if (id !== 'search') this.view.reader?.showSearchResults([]);
 		else {
 			if (this.results.length) this.view.reader?.showSearchResults(this.results, -1);
@@ -64,6 +101,8 @@ export class Sidebar {
 		this.view.setSearchNavVisible(false);
 		this.resultsEl?.empty();
 		this.searchInfo?.setText('');
+		// Providers re-add their tabs for the next book.
+		for (const id of [...this.providerPanels.keys()]) this.removeProvider(id.replace(/^provider:/, ''));
 		if (!book) return;
 		if (!book.toc.length) this.tocEl.createDiv({ cls: 'epp-empty', text: 'This book has no table of contents.' });
 		this.renderToc(book.toc, this.tocEl);
@@ -232,6 +271,8 @@ export class Sidebar {
 	}
 
 	step(delta: number): void {
+		const provider = this.providerPanels.get(this.activeTab);
+		if (provider) return provider.step(delta);
 		if (!this.results.length) return;
 		const n = this.results.length;
 		this.select(this.current === -1 ? (delta > 0 ? 0 : n - 1) : (this.current + delta + n) % n);
@@ -418,5 +459,155 @@ export class Sidebar {
 			this.view.navigate(e.locator);
 			if (this.view.sidebarIsOverlay()) this.view.toggleSidebar(false);
 		});
+	}
+}
+
+/** A provider's tab: its annotations in book order, grouped by chapter, with a filter. */
+class ProviderPanel {
+	private items: { spec: { id: string; locator: string }; annotation: EpubAnnotation; text: string | null; chapter: string }[] = [];
+	private shown: typeof this.items = [];
+	private current = -1;
+	private filter = '';
+	private hidden = false;
+	private stale = true;
+	private rendered = 0;
+	private listEl: HTMLElement | null = null;
+	private infoEl: HTMLElement | null = null;
+
+	constructor(
+		private view: EpubView,
+		public provider: AnnotationProvider<unknown>,
+		private el: HTMLElement,
+		private isActive: () => boolean,
+	) {}
+
+	get count(): number {
+		return this.items.length;
+	}
+
+	/** The layer changed: re-read it now if the tab is showing, otherwise when it's opened. */
+	update(hidden: boolean): void {
+		this.hidden = hidden;
+		this.stale = true;
+		if (this.isActive()) this.render();
+	}
+
+	render(): void {
+		const reader = this.view.reader;
+		if (this.stale && reader) {
+			this.stale = false;
+			this.items = reader.describeLayer(layerId(this.provider.id)).map((d) => ({
+				spec: d.spec,
+				annotation: d.spec.data as EpubAnnotation,
+				text: d.text,
+				chapter: d.tocItem?.label ?? (d.text === null ? 'Location not found' : ''),
+			}));
+			this.current = -1;
+		}
+		const el = this.el;
+		el.empty();
+		const bar = el.createDiv('epp-provider-toolbar');
+		bar.createDiv({ cls: 'epp-provider-name', text: this.provider.name });
+		const eye = bar.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': this.hidden ? 'Show in the book' : 'Hide in the book' } });
+		setIcon(eye, this.hidden ? 'eye-off' : 'eye');
+		eye.addEventListener('click', () => void this.view.plugin.setProviderHidden(this.provider.id, !this.hidden));
+
+		const row = el.createDiv('epp-search-row search-input-container');
+		const input = row.createEl('input', { type: 'search', attr: { placeholder: `Filter ${this.provider.name.toLowerCase()}…`, spellcheck: 'false' } });
+		input.value = this.filter;
+		const nav = el.createDiv('epp-search-toggles');
+		this.infoEl = nav.createDiv('epp-search-info');
+		const navEl = nav.createDiv('epp-search-nav');
+		for (const [icon, label, delta] of [
+			['chevron-up', 'Previous (Shift+Enter)', -1],
+			['chevron-down', 'Next (Enter)', 1],
+		] as const) {
+			const b = navEl.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': label } });
+			setIcon(b, icon);
+			b.addEventListener('click', () => this.step(delta));
+		}
+		this.listEl = el.createDiv('epp-search-results epp-provider-results');
+		this.listEl.addEventListener(
+			'scroll',
+			() => {
+				const l = this.listEl!;
+				if (this.rendered < this.shown.length && l.scrollTop + l.clientHeight > l.scrollHeight - 400) this.renderMore(200);
+			},
+			{ passive: true },
+		);
+		input.addEventListener(
+			'input',
+			debounce(() => {
+				this.filter = input.value;
+				this.current = -1;
+				this.renderList();
+			}, 150, true),
+		);
+		input.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				this.step(e.shiftKey ? -1 : 1);
+			}
+		});
+		this.renderList();
+	}
+
+	private renderList(): void {
+		const q = this.filter.trim().toLowerCase();
+		this.shown = q ? this.items.filter((i) => i.annotation.label.toLowerCase().includes(q) || (i.text ?? '').toLowerCase().includes(q) || i.chapter.toLowerCase().includes(q)) : this.items;
+		this.listEl!.empty();
+		this.rendered = 0;
+		this.lastChapter = null;
+		this.updateInfo();
+		if (!this.items.length) this.listEl!.createDiv({ cls: 'epp-empty', text: `No ${this.provider.name.toLowerCase()} in this book.` });
+		this.renderMore(200);
+	}
+
+	private updateInfo(): void {
+		const n = this.shown.length;
+		this.infoEl?.setText(this.current >= 0 ? `${this.current + 1} / ${n}` : `${n}${n === this.items.length ? '' : ` of ${this.items.length}`}`);
+	}
+
+	private lastChapter: string | null = null;
+
+	private renderMore(n: number): void {
+		const end = Math.min(this.shown.length, this.rendered + n);
+		const frag = document.createDocumentFragment();
+		for (let i = this.rendered; i < end; i++) {
+			const item = this.shown[i];
+			if (item.chapter !== this.lastChapter) {
+				this.lastChapter = item.chapter;
+				if (item.chapter) frag.createDiv({ cls: 'epp-search-group', text: item.chapter });
+			}
+			const row = frag.createDiv('epp-search-result epp-provider-item');
+			row.dataset.index = String(i);
+			row.createDiv({ cls: 'epp-provider-label', text: item.annotation.label });
+			const text = item.text ?? '(location not found)';
+			// The annotated text, unless it only repeats the label
+			if (text.toLowerCase() !== item.annotation.label.toLowerCase())
+				row.createDiv({ cls: 'epp-provider-text', text: text.length > 160 ? `${text.slice(0, 160)}…` : text });
+			row.addEventListener('click', () => this.select(i, true));
+			if (i === this.current) row.addClass('is-active');
+		}
+		this.rendered = end;
+		this.listEl!.appendChild(frag);
+	}
+
+	step(delta: number): void {
+		const n = this.shown.length;
+		if (!n) return;
+		this.select(this.current === -1 ? (delta > 0 ? 0 : n - 1) : (this.current + delta + n) % n);
+	}
+
+	private select(i: number, fromClick = false): void {
+		this.current = i;
+		this.updateInfo();
+		if (i >= this.rendered) this.renderMore(i - this.rendered + 50);
+		this.listEl?.querySelector('.is-active')?.removeClass('is-active');
+		const row = this.listEl?.querySelector(`[data-index="${i}"]`) as HTMLElement | null;
+		row?.addClass('is-active');
+		row?.scrollIntoView({ block: 'nearest' });
+		this.view.navigate(this.shown[i].spec.locator);
+		if (fromClick && this.view.sidebarIsOverlay()) this.view.toggleSidebar(false);
 	}
 }

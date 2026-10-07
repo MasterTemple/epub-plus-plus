@@ -101,6 +101,10 @@ export interface EppSettings {
 	highlightTap: HighlightGestureAction;
 	highlightDoubleTap: HighlightGestureAction;
 	highlightHold: HighlightGestureAction;
+	/** What "Save as highlight" on another plugin's annotation inserts into the annotation file. */
+	saveAnnotationAs: CopyAction;
+	/** Annotation providers (other plugins) whose annotations aren't drawn in books. */
+	hiddenProviders: string[];
 	/** Bumped when settings need a one-time migration. */
 	settingsVersion: number;
 	/** Last reading position per EPUB path. */
@@ -158,6 +162,8 @@ export const DEFAULT_SETTINGS: EppSettings = {
 	highlightMenu: [],
 	settingsVersion: 2,
 	copyAction: 'text',
+	saveAnnotationAs: 'format:callout',
+	hiddenProviders: [],
 	noColor: 'default',
 	jumpHighlight: true,
 	jumpHighlightDuration: 2000,

@@ -767,3 +767,39 @@ body.epp-appearance-open .mobile-navbar {
 .modal-container.epp-comment-container .setting-item {
 	padding-top: var(--size-4-2);
 }
+
+/* ---------- Annotations from other plugins ---------- */
+.epp-annotation-tip {
+	display: none;
+	position: absolute;
+	z-index: 6;
+	max-width: min(320px, calc(100% - 16px));
+	padding: var(--size-4-1) var(--size-4-2);
+	background: var(--background-primary);
+	border: var(--border-width) solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	box-shadow: var(--shadow-s);
+	pointer-events: none;
+	font-size: var(--font-ui-small);
+	white-space: pre-line;
+}
+.epp-annotation-tip.is-visible {
+	display: block;
+}
+.epp-provider-toolbar {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	margin: 0 2px var(--size-4-2);
+}
+.epp-provider-name {
+	flex: 1;
+	font-weight: var(--font-semibold);
+}
+.epp-provider-label {
+	font-weight: var(--font-medium);
+}
+.epp-provider-text {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}

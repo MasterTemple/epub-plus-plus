@@ -1,4 +1,5 @@
 export { EpubBook, type BookMetadata, type ManifestItem, type SpineItem } from './book/epub';
+export { BookText, type CfiOptions, type ExtractOptions, type TextSection } from './book/extract';
 export { flattenToc, type TocItem } from './book/toc';
 export { CssProcessor } from './css/rewrite';
 export * from './locators/cfi';
@@ -10,7 +11,9 @@ export {
 	EpubReader,
 	rangeText,
 	type FlashOptions,
+	type AnnotationLayerOptions,
 	type HighlightSpec,
+	type LayerHit,
 	type Location,
 	type ReaderOptions,
 	type SearchResult,

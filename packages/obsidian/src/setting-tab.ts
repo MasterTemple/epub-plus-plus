@@ -1,7 +1,7 @@
 import { PluginSettingTab, Setting, debounce, type App } from 'obsidian';
 import { buildAppearanceControls } from './appearance';
 import type EpubPlusPlus from './main';
-import { HIGHLIGHT_GESTURE_LABELS, HIGHLIGHT_MENU_LABELS, SELECTION_MENU_LABELS, type HighlightGestureAction, newFormatId, syncMenus, type AnnotationMode, type CopyAction, type LinkStyle, type LinkType, type OpenTarget } from './settings';
+import { HIGHLIGHT_GESTURE_LABELS, HIGHLIGHT_MENU_LABELS, SELECTION_MENU_LABELS, type HighlightGestureAction, needsComment, newFormatId, syncMenus, type AnnotationMode, type CopyAction, type LinkStyle, type LinkType, type OpenTarget } from './settings';
 
 export class EppSettingTab extends PluginSettingTab {
 	constructor(
@@ -367,6 +367,29 @@ export class EppSettingTab extends PluginSettingTab {
 					s.annotationResolveTextFragments = v;
 					await save();
 				}),
+			);
+
+		new Setting(containerEl).setName('Annotations from other plugins').setHeading();
+		containerEl.createEl('p', {
+			cls: 'setting-item-description',
+			text: 'Other plugins can mark passages in books (for example Bible references). Each gets its own sidebar tab, where its eye button shows or hides it in the book. Right-click one (or hold it on mobile) to save it as a highlight in the annotation file.',
+		});
+		new Setting(containerEl)
+			.setName('Save as highlight inserts')
+			.setDesc('What "Save as highlight" adds to the annotation file (created if needed). Templates can use {{label}}, the annotation\'s name. "Save with comment" uses the first format with {{comment}}.')
+			.addDropdown((d) => {
+				d.addOption('link', 'Link');
+				for (const f of s.copyFormats) if (!needsComment(f.template)) d.addOption(`format:${f.id}`, f.name);
+				const current = this.plugin.saveFormat();
+				d.setValue(typeof current === 'string' ? current : `format:${current.id}`).onChange(async (v) => {
+					s.saveAnnotationAs = v as CopyAction;
+					await save();
+				});
+			});
+		const providers = [...this.plugin.providers.values()];
+		for (const p of providers)
+			new Setting(containerEl).setName(`Show ${p.name}`).addToggle((t) =>
+				t.setValue(!s.hiddenProviders.includes(p.id)).onChange((v) => this.plugin.setProviderHidden(p.id, !v)),
 			);
 
 		new Setting(containerEl).setName('Jumping to a passage').setHeading();
