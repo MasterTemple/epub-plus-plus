@@ -823,3 +823,25 @@ body.epp-appearance-open .mobile-navbar {
 .epp-appearance .setting-item.epp-overridden {
 	box-shadow: inset 3px 0 0 var(--interactive-accent);
 }
+
+/* ---------- Collapsible chapters in annotation provider tabs ---------- */
+.epp-provider-group {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	cursor: pointer;
+	user-select: none;
+	z-index: 1;
+}
+.epp-provider-group:hover {
+	color: var(--text-normal);
+}
+.epp-provider-group-title {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.epp-provider-group.is-collapsed .epp-hl-group-chevron {
+	transform: rotate(-90deg);
+}

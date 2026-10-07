@@ -473,6 +473,11 @@ class ProviderPanel {
 	private rendered = 0;
 	private listEl: HTMLElement | null = null;
 	private infoEl: HTMLElement | null = null;
+	private collapseAllEl: HTMLElement | null = null;
+	/** Runs of shown items in the same chapter: `[start, end)` indexes into `shown`. */
+	private groups: { chapter: string; start: number; end: number; items?: HTMLElement; filled?: number }[] = [];
+	/** Chapters the user collapsed (kept across filtering and re-renders). */
+	private collapsed = new Set<string>();
 
 	constructor(
 		private view: EpubView,
@@ -511,6 +516,15 @@ class ProviderPanel {
 		const eye = bar.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': this.hidden ? 'Show in the book' : 'Hide in the book' } });
 		setIcon(eye, this.hidden ? 'eye-off' : 'eye');
 		eye.addEventListener('click', () => void this.view.plugin.setProviderHidden(this.provider.id, !this.hidden));
+		this.collapseAllEl = bar.createDiv({ cls: 'clickable-icon' });
+		this.collapseAllEl.addEventListener('click', () => {
+			const chapters = this.groups.map((g) => g.chapter).filter(Boolean);
+			const expand = chapters.every((c) => this.collapsed.has(c));
+			for (const c of chapters) expand ? this.collapsed.delete(c) : this.collapsed.add(c);
+			const scroll = this.listEl?.scrollTop ?? 0;
+			this.renderList();
+			if (this.listEl) this.listEl.scrollTop = expand ? scroll : 0;
+		});
 
 		const row = el.createDiv('epp-search-row search-input-container');
 		const input = row.createEl('input', { type: 'search', attr: { placeholder: `Filter ${this.provider.name.toLowerCase()}…`, spellcheck: 'false' } });
@@ -555,10 +569,16 @@ class ProviderPanel {
 	private renderList(): void {
 		const q = this.filter.trim().toLowerCase();
 		this.shown = q ? this.items.filter((i) => i.annotation.label.toLowerCase().includes(q) || (i.text ?? '').toLowerCase().includes(q) || i.chapter.toLowerCase().includes(q)) : this.items;
+		this.groups = [];
+		for (let i = 0; i < this.shown.length; i++) {
+			const last = this.groups[this.groups.length - 1];
+			if (last && last.chapter === this.shown[i].chapter) last.end = i + 1;
+			else this.groups.push({ chapter: this.shown[i].chapter, start: i, end: i + 1 });
+		}
 		this.listEl!.empty();
 		this.rendered = 0;
-		this.lastChapter = null;
 		this.updateInfo();
+		this.updateCollapseAll();
 		if (!this.items.length) this.listEl!.createDiv({ cls: 'epp-empty', text: `No ${this.provider.name.toLowerCase()} in this book.` });
 		this.renderMore(200);
 	}
@@ -568,17 +588,69 @@ class ProviderPanel {
 		this.infoEl?.setText(this.current >= 0 ? `${this.current + 1} / ${n}` : `${n}${n === this.items.length ? '' : ` of ${this.items.length}`}`);
 	}
 
-	private lastChapter: string | null = null;
+	private updateCollapseAll(): void {
+		const el = this.collapseAllEl;
+		if (!el) return;
+		const chapters = this.groups.map((g) => g.chapter).filter(Boolean);
+		el.toggle(chapters.length > 0);
+		const all = chapters.length > 0 && chapters.every((c) => this.collapsed.has(c));
+		setIcon(el, all ? 'chevrons-up-down' : 'chevrons-down-up');
+		el.setAttr('aria-label', all ? 'Expand all' : 'Collapse all');
+	}
 
+	private groupOf(i: number): (typeof this.groups)[number] | undefined {
+		return this.groups.find((g) => i >= g.start && i < g.end);
+	}
+
+	/** Render items in book order, ~n at a time (books can have thousands); collapsed chapters are skipped. */
 	private renderMore(n: number): void {
-		const end = Math.min(this.shown.length, this.rendered + n);
-		const frag = document.createDocumentFragment();
-		for (let i = this.rendered; i < end; i++) {
-			const item = this.shown[i];
-			if (item.chapter !== this.lastChapter) {
-				this.lastChapter = item.chapter;
-				if (item.chapter) frag.createDiv({ cls: 'epp-search-group', text: item.chapter });
+		let budget = n;
+		let i = this.rendered;
+		while (i < this.shown.length && budget > 0) {
+			const group = this.groupOf(i)!;
+			if (i === group.start) this.renderGroupHead(group);
+			if (group.chapter && this.collapsed.has(group.chapter)) {
+				i = group.end;
+				continue;
 			}
+			const end = Math.min(group.end, i + budget);
+			this.renderItems(group, i, end);
+			budget -= end - i;
+			i = end;
+		}
+		this.rendered = i;
+	}
+
+	private renderGroupHead(group: (typeof this.groups)[number]): void {
+		const list = this.listEl!;
+		if (!group.chapter) {
+			group.items = list.createDiv();
+			return;
+		}
+		const chapter = group.chapter;
+		const head = list.createDiv('epp-search-group epp-provider-group');
+		head.toggleClass('is-collapsed', this.collapsed.has(chapter));
+		setIcon(head.createSpan('epp-hl-group-chevron'), 'chevron-down');
+		head.createSpan({ cls: 'epp-provider-group-title', text: chapter });
+		head.createSpan({ cls: 'epp-hl-group-count', text: String(group.end - group.start) });
+		const items = (group.items = list.createDiv('epp-provider-group-items'));
+		items.toggle(!this.collapsed.has(chapter));
+		head.addEventListener('click', () => {
+			const collapse = !this.collapsed.has(chapter);
+			if (collapse) this.collapsed.add(chapter);
+			else this.collapsed.delete(chapter);
+			head.toggleClass('is-collapsed', collapse);
+			items.toggle(!collapse);
+			// Skipped while collapsed: render this chapter's items now.
+			if (!collapse && (group.filled ?? group.start) < group.end) this.renderItems(group, group.filled ?? group.start, group.end);
+			this.updateCollapseAll();
+		});
+	}
+
+	private renderItems(group: (typeof this.groups)[number], start: number, end: number): void {
+		const frag = document.createDocumentFragment();
+		for (let i = start; i < end; i++) {
+			const item = this.shown[i];
 			const row = frag.createDiv('epp-search-result epp-provider-item');
 			row.dataset.index = String(i);
 			row.createDiv({ cls: 'epp-provider-label', text: item.annotation.label });
@@ -589,8 +661,8 @@ class ProviderPanel {
 			row.addEventListener('click', () => this.select(i, true));
 			if (i === this.current) row.addClass('is-active');
 		}
-		this.rendered = end;
-		this.listEl!.appendChild(frag);
+		group.items!.appendChild(frag);
+		group.filled = end;
 	}
 
 	step(delta: number): void {
@@ -604,6 +676,9 @@ class ProviderPanel {
 		this.updateInfo();
 		if (i >= this.rendered) this.renderMore(i - this.rendered + 50);
 		this.listEl?.querySelector('.is-active')?.removeClass('is-active');
+		// Stepping into a collapsed chapter opens it.
+		const group = this.groupOf(i);
+		if (group?.chapter && this.collapsed.has(group.chapter)) (group.items?.previousElementSibling as HTMLElement | null)?.click();
 		const row = this.listEl?.querySelector(`[data-index="${i}"]`) as HTMLElement | null;
 		row?.addClass('is-active');
 		row?.scrollIntoView({ block: 'nearest' });
