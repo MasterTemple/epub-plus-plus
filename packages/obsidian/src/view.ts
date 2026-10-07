@@ -116,6 +116,7 @@ export class EpubView extends FileView {
 
 	override async onClose(): Promise<void> {
 		this.contentEl.doc.body.removeClass('epp-drawer-open');
+		this.appearance?.toggle(false);
 		this.offIndex?.();
 		this.teardown();
 	}

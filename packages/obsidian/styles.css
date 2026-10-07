@@ -517,3 +517,37 @@ body.epp-drawer-open .mobile-navbar {
 	color: var(--text-faint);
 	text-decoration: line-through;
 }
+
+/* ---------- Appearance panel rows ---------- */
+body.epp-appearance-open .mobile-navbar {
+	display: none;
+}
+.epp-appearance .setting-item,
+.epp-appearance .setting-item.epp-subsetting {
+	align-items: center;
+	flex-wrap: nowrap;
+	gap: var(--size-4-3);
+	min-height: 3.25em;
+	padding: var(--size-4-2) var(--size-4-3);
+	border-top: none;
+}
+.epp-appearance .setting-item.epp-subsetting {
+	margin-top: var(--size-4-1);
+}
+.epp-appearance .setting-item-info {
+	align-self: center;
+	flex: 1 1 40%;
+	min-width: 0;
+	margin: 0;
+}
+.epp-appearance .setting-item-control {
+	flex: 1 1 60%;
+	justify-content: flex-end;
+	min-width: 0;
+}
+.epp-appearance .setting-item-control input[type='range'] {
+	flex: 1 1 auto;
+	width: auto;
+	min-width: 72px;
+	max-width: 240px;
+}

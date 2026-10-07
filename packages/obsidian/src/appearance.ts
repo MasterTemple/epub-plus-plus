@@ -1,5 +1,5 @@
 import type { ReaderSettings, ThemeName, TextAlign, WidthUnit } from '@epub-pp/core';
-import { Setting, setIcon, type SliderComponent, type TextComponent } from 'obsidian';
+import { Platform, Setting, setIcon, type SliderComponent, type TextComponent } from 'obsidian';
 import type EpubPlusPlus from './main';
 
 const FONT_PRESETS: Record<string, string> = {
@@ -142,6 +142,8 @@ export class AppearancePanel {
 	toggle(force?: boolean): void {
 		this.open = force ?? !this.open;
 		this.el.toggleClass('is-open', this.open);
+		// On phones the panel is a bottom sheet; Obsidian's navbar would cover it.
+		this.el.doc.body.toggleClass('epp-appearance-open', this.open && Platform.isMobile);
 		if (this.open) {
 			this.el.empty();
 			const header = this.el.createDiv('epp-appearance-header');
