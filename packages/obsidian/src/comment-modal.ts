@@ -51,23 +51,31 @@ class CommentModal extends Modal {
 	}
 
 	/**
-	 * Mobile: sit at the top of the screen (CSS) and shrink to the area the on-screen keyboard leaves
-	 * visible, so the buttons stay reachable.
+	 * Mobile: keep the dialog directly above the on-screen keyboard (the bottom of the visual
+	 * viewport), shrinking it if the visible area is too small, so its buttons stay reachable.
 	 */
 	private fitAboveKeyboard(): void {
 		this.containerEl.addClass('epp-comment-container');
 		const vv = window.visualViewport;
-		if (!vv) return;
+		const gap = 8;
 		const fit = () => {
-			this.modalEl.style.maxHeight = `${Math.max(200, vv.height - 24)}px`;
-			this.containerEl.style.paddingTop = `${vv.offsetTop + 12}px`;
+			const top = vv ? vv.offsetTop : 0;
+			const height = vv ? vv.height : window.innerHeight;
+			this.modalEl.style.maxHeight = `${Math.max(160, height - 2 * gap)}px`;
+			const h = this.modalEl.offsetHeight;
+			this.containerEl.style.paddingTop = `${Math.max(top + gap, top + height - h - gap)}px`;
 		};
 		fit();
-		vv.addEventListener('resize', fit);
-		vv.addEventListener('scroll', fit);
+		const ro = new ResizeObserver(fit); // content height changes (typing grows the text box)
+		ro.observe(this.modalEl);
+		vv?.addEventListener('resize', fit);
+		vv?.addEventListener('scroll', fit);
+		window.addEventListener('resize', fit);
 		this.stopFit = () => {
-			vv.removeEventListener('resize', fit);
-			vv.removeEventListener('scroll', fit);
+			ro.disconnect();
+			vv?.removeEventListener('resize', fit);
+			vv?.removeEventListener('scroll', fit);
+			window.removeEventListener('resize', fit);
 		};
 	}
 

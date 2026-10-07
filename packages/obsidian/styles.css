@@ -748,10 +748,9 @@ body.epp-appearance-open .mobile-navbar {
 	margin-inline-start: 0;
 }
 
-/* ---------- Comment modal on mobile: top of the screen, above the keyboard ---------- */
+/* ---------- Comment modal on mobile: directly above the keyboard (positioned from JS) ---------- */
 .modal-container.epp-comment-container {
 	align-items: flex-start;
-	padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
 }
 .modal-container.epp-comment-container .modal.epp-comment-modal {
 	margin-top: 0;

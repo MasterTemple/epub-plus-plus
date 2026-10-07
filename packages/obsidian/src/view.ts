@@ -256,6 +256,8 @@ export class EpubView extends FileView {
 			} else this.plugin.openSource(entries[0], this);
 		});
 		reader.on('highlight-hover', (e, specs) => {
+			// Touch screens emit a mouse move for every tap; hover cards/previews are desktop-only.
+			if (Platform.isMobile) return;
 			this.commentCard.hover(e, specs.map((s) => s.data as HighlightEntry));
 			if (!specs.length) return;
 			const entry = specs[0].data as HighlightEntry;
