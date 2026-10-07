@@ -369,3 +369,10 @@
 	border-radius: var(--radius-l) var(--radius-l) 0 0;
 	padding-bottom: calc(var(--size-4-4) + env(safe-area-inset-bottom, 0px));
 }
+
+/* Dependent setting rows (shown when their toggle/dropdown enables them) */
+.setting-item.epp-subsetting {
+	border-top: none;
+	padding-top: 0;
+	padding-inline-start: var(--size-4-4);
+}

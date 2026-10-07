@@ -1,5 +1,5 @@
 import type { ReaderSettings, ThemeName, TextAlign, WidthUnit } from '@epub-pp/core';
-import { Setting, setIcon } from 'obsidian';
+import { Setting, setIcon, type SliderComponent, type TextComponent } from 'obsidian';
 import type EpubPlusPlus from './main';
 
 const FONT_PRESETS: Record<string, string> = {
@@ -29,60 +29,67 @@ export function buildAppearanceControls(container: HTMLElement, plugin: EpubPlus
 			.onChange((v) => update({ theme: v as ThemeName })),
 	);
 
+	let sizeSlider: SliderComponent;
+	const setSize = (n: number) => {
+		const v = Math.min(40, Math.max(8, n));
+		sizeSlider.setValue(v);
+		update({ fontSize: v });
+	};
 	new Setting(container)
 		.setName('Font size')
 		.setDesc('Publisher sizes (headings, footnotes…) scale proportionally.')
-		.addExtraButton((b) => b.setIcon('minus').setTooltip('Smaller').onClick(() => update({ fontSize: Math.max(8, s().fontSize - 1) }).then(rebuild)))
-		.addSlider((sl) => sl.setLimits(8, 40, 1).setValue(s().fontSize).setDynamicTooltip().onChange((v) => update({ fontSize: v })))
-		.addExtraButton((b) => b.setIcon('plus').setTooltip('Larger').onClick(() => update({ fontSize: Math.min(40, s().fontSize + 1) }).then(rebuild)));
+		.addExtraButton((b) => b.setIcon('minus').setTooltip('Smaller').onClick(() => setSize(s().fontSize - 1)))
+		.addSlider((sl) => (sizeSlider = sl).setLimits(8, 40, 1).setValue(s().fontSize).setDynamicTooltip().onChange((v) => update({ fontSize: v })))
+		.addExtraButton((b) => b.setIcon('plus').setTooltip('Larger').onClick(() => setSize(s().fontSize + 1)));
 
-	const presetKey = s().fontFamily in FONT_PRESETS ? s().fontFamily : '__custom';
-	new Setting(container)
-		.setName('Font')
-		.addDropdown((d) =>
-			d
-				.addOptions({ ...FONT_PRESETS, __custom: 'Custom…' })
-				.setValue(presetKey)
-				.onChange(async (v) => {
-					if (v !== '__custom') await update({ fontFamily: v });
-					rebuild();
-				}),
-		)
-		.then((setting) => {
-			if (presetKey === '__custom')
-				setting.addText((t) =>
-					t
-						.setPlaceholder('e.g. "Literata", serif')
-						.setValue(s().fontFamily)
-						.onChange((v) => update({ fontFamily: v })),
-				);
-		});
-
-	new Setting(container)
-		.setName('Line spacing')
-		.setDesc(s().lineHeight ? String(s().lineHeight) : 'Publisher')
-		.addToggle((t) =>
+	// Font: preset dropdown, plus a custom-family row shown only for "Custom…".
+	const isCustom = () => !(s().fontFamily in FONT_PRESETS);
+	let customRow: Setting;
+	new Setting(container).setName('Font').addDropdown((d) =>
+		d
+			.addOptions({ ...FONT_PRESETS, __custom: 'Custom…' })
+			.setValue(isCustom() ? '__custom' : s().fontFamily)
+			.onChange((v) => {
+				customRow.settingEl.toggle(v === '__custom');
+				if (v !== '__custom') update({ fontFamily: v });
+			}),
+	);
+	customRow = new Setting(container)
+		.setName('Custom font family')
+		.setDesc('Any CSS font-family list.')
+		.addText((t) =>
 			t
-				.setTooltip('Override publisher line spacing')
-				.setValue(s().lineHeight !== null)
-				.onChange(async (on) => {
-					await update({ lineHeight: on ? 1.6 : null });
-					rebuild();
-				}),
-		)
-		.then((setting) => {
-			if (s().lineHeight !== null)
-				setting.addSlider((sl) =>
-					sl
-						.setLimits(1, 2.6, 0.05)
-						.setValue(s().lineHeight!)
-						.setDynamicTooltip()
-						.onChange((v) => {
-							setting.setDesc(String(v));
-							update({ lineHeight: v });
-						}),
-				);
-		});
+				.setPlaceholder('e.g. "Literata", serif')
+				.setValue(isCustom() ? s().fontFamily : '')
+				.onChange((v) => update({ fontFamily: v })),
+		);
+	customRow.settingEl.addClass('epp-subsetting');
+	customRow.settingEl.toggle(isCustom());
+
+	// Line spacing: the toggle stays put; the slider lives on its own row underneath.
+	let lastLineHeight = s().lineHeight ?? 1.6;
+	let lineRow: Setting;
+	new Setting(container)
+		.setName('Override line spacing')
+		.setDesc("Off keeps the publisher's line spacing.")
+		.addToggle((t) =>
+			t.setValue(s().lineHeight !== null).onChange((on) => {
+				lineRow.settingEl.toggle(on);
+				update({ lineHeight: on ? lastLineHeight : null });
+			}),
+		);
+	lineRow = new Setting(container).setName('Line spacing').addSlider((sl) =>
+		sl
+			.setLimits(1, 2.6, 0.05)
+			.setValue(lastLineHeight)
+			.setDynamicTooltip()
+			.onChange((v) => {
+				lastLineHeight = v;
+				update({ lineHeight: v });
+			}),
+	);
+	lineRow.settingEl.addClass('epp-subsetting');
+	lineRow.settingEl.toggle(s().lineHeight !== null);
 
 	new Setting(container).setName('Text alignment').addDropdown((d) =>
 		d
@@ -91,10 +98,12 @@ export function buildAppearanceControls(container: HTMLElement, plugin: EpubPlus
 			.onChange((v) => update({ textAlign: v as TextAlign })),
 	);
 
+	let widthText: TextComponent;
 	new Setting(container)
 		.setName('Reading width')
 		.setDesc('0 = fill the pane. "ch" ≈ characters per line.')
 		.addText((t) => {
+			widthText = t;
 			t.inputEl.type = 'number';
 			t.inputEl.addClass('epp-number');
 			t.setValue(String(s().width)).onChange((v) => {
@@ -109,18 +118,14 @@ export function buildAppearanceControls(container: HTMLElement, plugin: EpubPlus
 				.onChange((v) => {
 					const unit = v as WidthUnit;
 					const defaults: Record<WidthUnit, number> = { em: 42, ch: 70, px: 720, '%': 90 };
-					update({ widthUnit: unit, width: defaults[unit] }).then(rebuild);
+					widthText.setValue(String(defaults[unit]));
+					update({ widthUnit: unit, width: defaults[unit] });
 				}),
 		);
 
 	new Setting(container).setName('Side margins').addSlider((sl) => sl.setLimits(0, 120, 4).setValue(s().margin).setDynamicTooltip().onChange((v) => update({ margin: v })));
 
 	new Setting(container).setName('Dim images in dark themes').addToggle((t) => t.setValue(s().dimImages).onChange((v) => update({ dimImages: v })));
-
-	function rebuild() {
-		container.empty();
-		buildAppearanceControls(container, plugin, onChange);
-	}
 }
 
 /** Floating appearance popover inside an EPUB view. */
