@@ -845,3 +845,7 @@ body.epp-appearance-open .mobile-navbar {
 .epp-provider-group.is-collapsed .epp-hl-group-chevron {
 	transform: rotate(-90deg);
 }
+/* Items line up with the heading text (after its 4px padding, 14px chevron and 4px gap). */
+.epp-provider-group-items .epp-search-result {
+	padding-inline-start: calc(var(--size-4-1) + 14px + 4px);
+}
