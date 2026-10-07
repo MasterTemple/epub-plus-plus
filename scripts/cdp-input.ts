@@ -65,6 +65,17 @@ if (tap) {
 	await Bun.sleep(60);
 	await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
+const dbltap = opt('--dbltap'); // x,y (touch)
+if (dbltap) {
+	const [x, y] = dbltap.split(',').map(Number);
+	await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+	for (let i = 0; i < 2; i++) {
+		await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+		await Bun.sleep(40);
+		await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+		if (i === 0) await Bun.sleep(120);
+	}
+}
 const rc = opt('--rightclick');
 if (rc) {
 	const [x, y] = rc.split(',').map(Number);

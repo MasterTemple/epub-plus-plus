@@ -484,3 +484,36 @@ body.epp-drawer-open .mobile-navbar {
 	border-inline-start: var(--border-width) solid var(--background-modifier-border);
 	border-radius: 0;
 }
+
+/* ---------- Comment modal ---------- */
+.epp-comment-quote {
+	margin: 0 0 var(--size-4-3);
+	padding: var(--size-4-1) var(--size-4-3);
+	border-inline-start: 3px solid var(--interactive-accent);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	max-height: 8em;
+	overflow-y: auto;
+}
+.epp-comment-input {
+	width: 100%;
+	min-height: 6em;
+	resize: vertical;
+}
+.epp-comment-modal .setting-item {
+	border-top: none;
+	padding-bottom: 0;
+}
+
+/* ---------- Menu editor (settings) ---------- */
+.epp-menu-editor {
+	margin: 0 0 var(--size-4-4) var(--size-4-4);
+}
+.epp-menu-editor .setting-item.epp-menu-editor-row {
+	padding-block: var(--size-4-1);
+	border-top: none;
+}
+.epp-menu-editor-row.is-hidden-item .setting-item-name {
+	color: var(--text-faint);
+	text-decoration: line-through;
+}

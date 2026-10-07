@@ -235,7 +235,16 @@ export class EpubView extends FileView {
 		reader.on('external-link', (_e, url) => window.open(url, '_blank'));
 		reader.on('highlight-click', (e, specs) => {
 			const entries = specs.map((s) => s.data as HighlightEntry);
-			if (Platform.isMobile || entries.length > 1) {
+			if (Platform.isMobile) {
+				// Wait a moment: this tap may be the first half of a double tap (select paragraph).
+				const tappedAt = Date.now();
+				window.setTimeout(() => {
+					if (this.lastDoubleTap >= tappedAt) return;
+					const menu = new Menu();
+					this.addHighlightItems(menu, entries);
+					menu.showAtMouseEvent(e);
+				}, 320);
+			} else if (entries.length > 1) {
 				const menu = new Menu();
 				this.addHighlightItems(menu, entries);
 				menu.showAtMouseEvent(e);
@@ -352,6 +361,10 @@ export class EpubView extends FileView {
 			if ((axis === 'y' && readerScrolled()) || mine) e.stopPropagation();
 		};
 		const end = (e: TouchEvent) => {
+			if (axis === null && inReader && Date.now() - t0 < 300 && this.handleTap(e)) {
+				this.touching = false;
+				return;
+			}
 			if (e.touches.length === 0 && inReader) {
 				this.touching = false;
 				this.scheduleSelectionMenu(this.reader?.getSelection() ?? null);
@@ -366,8 +379,43 @@ export class EpubView extends FileView {
 		};
 		this.registerDomEvent(this.mainEl, 'touchstart', start, { passive: true });
 		this.registerDomEvent(this.mainEl, 'touchmove', move, { passive: true });
-		this.registerDomEvent(this.mainEl, 'touchend', end, { passive: true });
+		// Not passive: a double tap prevents the browser's own double-tap handling (zoom / word select).
+		this.registerDomEvent(this.mainEl, 'touchend', end, { passive: false });
 		this.registerDomEvent(this.mainEl, 'touchcancel', end, { passive: true });
+	}
+
+	private lastTap = { t: 0, x: 0, y: 0 };
+	private lastDoubleTap = 0;
+
+	/** Mobile: a double tap selects the paragraph under the finger and opens EPUB++'s menu. */
+	private handleTap(e: TouchEvent): boolean {
+		const touch = e.changedTouches[0];
+		if (!touch || !Platform.isMobile || !this.reader) return false;
+		const now = Date.now();
+		const prev = this.lastTap;
+		this.lastTap = { t: now, x: touch.clientX, y: touch.clientY };
+		if (now - prev.t > 350 || Math.hypot(touch.clientX - prev.x, touch.clientY - prev.y) > 30) return false;
+		this.lastTap = { t: 0, x: 0, y: 0 };
+		const target = e.composedPath()[0] as Node | undefined;
+		const el = target?.nodeType === 1 ? (target as Element) : target?.parentElement;
+		const block = el?.closest('p, li, blockquote, h1, h2, h3, h4, h5, h6, dd, dt, figcaption, td, th, pre, div:not(.epp-body):not(.epp-html)');
+		if (!block || !this.reader.content.contains(block) || !block.textContent?.trim()) return false;
+		e.preventDefault();
+		this.lastDoubleTap = now;
+		this.nativeSelectionMode = false;
+		const range = block.ownerDocument.createRange();
+		range.selectNodeContents(block);
+		const sel = block.ownerDocument.getSelection();
+		sel?.removeAllRanges();
+		sel?.addRange(range);
+		window.clearTimeout(this.selectionMenuTimer);
+		window.setTimeout(() => {
+			const info = this.reader?.describeRange(range);
+			if (!info) return;
+			this.lastMenuCfi = info.cfi;
+			this.showSelectionMenu(info);
+		}, 60);
+		return true;
 	}
 
 	private onCopy(e: ClipboardEvent): void {
@@ -375,6 +423,12 @@ export class EpubView extends FileView {
 		if (!what || what === 'text' || !e.clipboardData) return; // default browser copy
 		const sel = this.reader?.getSelection();
 		if (!sel) return;
+		if (this.plugin.asksForComment(what)) {
+			// Needs a prompt first, so it can't fill this (synchronous) copy event.
+			e.preventDefault();
+			this.plugin.copy(this, sel, what, this.activeColor);
+			return;
+		}
 		e.clipboardData.setData('text/plain', this.plugin.renderCopy(this, sel, what, this.activeColor));
 		e.preventDefault();
 		new Notice(`Copied ${this.plugin.copyLabel(what)}`);
@@ -476,45 +530,60 @@ export class EpubView extends FileView {
 		m.showAtPosition(at);
 	}
 
+	/** Selection menu, in the order and with the items configured in settings. */
 	addSelectionItems(menu: Menu, info: SelectionInfo, isParagraph = false): void {
 		const s = this.plugin.settings;
 		const section = 'epp-selection';
 		if (isParagraph) menu.addItem((i) => (i.setTitle('Paragraph') as any).setIsLabel?.(true).setSection?.(section));
-		this.addColorItem(menu, 'Copy link', 'link', section, (c) => this.plugin.copy(this, info, 'link', c));
-		for (const fmt of s.copyFormats) {
-			this.addColorItem(menu, `Copy as ${fmt.name.toLowerCase()}`, fmt.name.toLowerCase().includes('callout') ? 'quote' : 'clipboard-copy', section, (c) =>
-				this.plugin.copy(this, info, fmt, c),
-			);
+		for (const entry of s.selectionMenu) {
+			if (!entry.show) continue;
+			if (entry.id === 'link') {
+				this.addColorItem(menu, 'Copy link', 'link', section, (c) => this.plugin.copy(this, info, 'link', c));
+			} else if (entry.id === 'alt-link') {
+				menu.addItem((i) =>
+					i
+						.setTitle(s.linkType === 'cfi' ? 'Copy text-fragment link' : 'Copy CFI link')
+						.setIcon('link-2')
+						.setSection(section)
+						.onClick(() => this.plugin.copy(this, info, 'alt-link', this.activeColor)),
+				);
+			} else if (entry.id === 'text') {
+				menu.addItem((i) => i.setTitle('Copy text').setIcon('copy').setSection(section).onClick(() => this.plugin.copy(this, info, 'text', null)));
+			} else if (entry.id.startsWith('format:')) {
+				const fmt = s.copyFormats.find((f) => `format:${f.id}` === entry.id);
+				if (!fmt) continue;
+				const lower = fmt.name.toLowerCase();
+				const icon = this.plugin.asksForComment(fmt) ? 'message-square-quote' : lower.includes('callout') ? 'quote' : 'clipboard-copy';
+				this.addColorItem(menu, `Copy as ${lower}${this.plugin.asksForComment(fmt) ? '…' : ''}`, icon, section, (c) => this.plugin.copy(this, info, fmt, c));
+			}
 		}
-		menu.addItem((i) =>
-			i
-				.setTitle(s.linkType === 'cfi' ? 'Copy text-fragment link' : 'Copy CFI link')
-				.setIcon('link-2')
-				.setSection(section)
-				.onClick(() => this.plugin.copy(this, info, 'alt-link', this.activeColor)),
-		);
-		menu.addItem((i) => i.setTitle('Copy text').setIcon('copy').setSection(section).onClick(() => this.plugin.copy(this, info, 'text', null)));
 	}
 
+	/** Highlight menu, in the order and with the items configured in settings. */
 	addHighlightItems(menu: Menu, entries: HighlightEntry[]): void {
+		const order = this.plugin.settings.highlightMenu.filter((e) => e.show).map((e) => e.id);
 		for (const entry of entries) {
 			const section = `epp-hl-${entry.id}`;
 			const note = entry.sourcePath.split('/').pop()?.replace(/\.md$/, '') ?? entry.sourcePath;
 			if (entries.length > 1) menu.addItem((i) => (i.setTitle(`Highlight in "${note}"`) as any).setIsLabel?.(true).setSection?.(section));
-			menu.addItem((i) => i.setTitle(`Open in "${note}"`).setIcon('file-text').setSection(section).onClick(() => this.plugin.openSource(entry, this)));
-			this.addColorItem(menu, 'Change color', 'palette', section, (c) => this.plugin.setHighlightColor(entry, c), entry.color ?? null);
-			menu.addItem((i) =>
-				i
-					.setTitle('Copy link')
-					.setIcon('link')
-					.setSection(section)
-					.onClick(async () => {
-						await navigator.clipboard.writeText(entry.original);
-					}),
-			);
+			for (const id of order) {
+				if (id === 'open') menu.addItem((i) => i.setTitle(`Open in "${note}"`).setIcon('file-text').setSection(section).onClick(() => this.plugin.openSource(entry, this)));
+				else if (id === 'color')
+					this.addColorItem(menu, 'Change color', 'palette', section, (c) => this.plugin.setHighlightColor(entry, c), entry.color ?? null);
+				else if (id === 'copy-link')
+					menu.addItem((i) =>
+						i
+							.setTitle('Copy link')
+							.setIcon('link')
+							.setSection(section)
+							.onClick(async () => {
+								await navigator.clipboard.writeText(entry.original);
+								new Notice('Copied link to clipboard');
+							}),
+					);
+			}
 		}
 	}
-
 
 	// --------------------------------------------------------------------------------------------
 	// Selection bar (mobile: there is no right-click)

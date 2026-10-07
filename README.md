@@ -29,15 +29,21 @@ The repo has two packages:
 - **Highlight actions.**
   - Click a highlight to open the source note at that line.
   - Right-click it for *Change color* (rewrites `&color=` in the note, plus a surrounding `> [!quote|color]` callout header), *Open*, and *Copy link*.
-- **Copy menu on any text.** Right-click a selection to get *Copy link* plus your copy formats (callout, quote, …), each with a color submenu. Right-clicking without a selection targets the paragraph under the pointer. Formats are templates (`{{text}}`, `{{link}}`, `{{color}}`, `{{chapter}}`, …) and multi-line quotes keep their `> ` prefix.
+- **Copy menu on any text.** Right-click a selection to get *Copy link* plus your copy formats (callout, quote, …), or right-click without a selection to target the paragraph under the pointer.
+  - Tapping a colored item uses your previous color; its arrow opens a color picker.
+  - Formats are templates (`{{text}}`, `{{link}}`, `{{color}}`, `{{chapter}}`, …), and multi-line values keep their `> ` prefix.
+  - Formats with `{{comment}}` ask for a comment first. The default *Callout with comment* nests the quote and puts your comment below it.
+  - Which items appear in the selection and highlight menus, and in what order, is configurable.
+  - Ctrl/Cmd+C copies with a chosen action, and every copy style is a command you can bind to a hotkey.
 - **Sidebar.** The in-view sidebar has a table of contents (tracks the current chapter), search (case / whole word / regex, results grouped by chapter, Enter / Shift+Enter to step through), and a list of the book's highlights.
 - **Backlinks.** Obsidian's Backlinks pane works for EPUBs. Hovering a backlink underlines its passage and scrolls to it.
 - **Appearance.** Theme (match Obsidian, light, sepia, dark, publisher), font size and family, line spacing, alignment, reading width (`em`, `ch`, `px`, `%`), margins, and image dimming.
 - **Mobile.**
-  - The sidebar becomes a drawer. It does the same on narrow desktop panes, via a container query.
-  - The toolbar is compact, and the appearance panel becomes a bottom sheet on phones.
-  - A selection bar (Link / Callout / More) replaces right-click.
-  - Tapping a highlight opens its menu.
+  - Selecting text, or double-tapping a paragraph, opens EPUB++'s menu. *System menu* hands the selection back to the OS toolbar.
+  - Swiping towards the left drawer opens the EPUB++ sidebar first, and Obsidian's drawer on the next swipe. The sidebar is also a drawer on narrow desktop panes, via a container query.
+  - Vertical swipes scroll the book instead of triggering Obsidian's pull-down.
+  - The appearance panel is a bottom sheet on phones.
+  - Floating ▲/▼ buttons step through search results.
 - **Reading position** is saved per book as a CFI and restored exactly.
 
 ### Link format details

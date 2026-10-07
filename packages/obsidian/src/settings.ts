@@ -15,6 +15,12 @@ export interface CopyFormat {
 /** What a copy produces: plain text, a link, the alternate link type, or a copy format (`format:<id>`). */
 export type CopyAction = 'text' | 'link' | 'alt-link' | `format:${string}`;
 
+/** One entry of a configurable context menu. */
+export interface MenuEntry {
+	id: string;
+	show: boolean;
+}
+
 export type LinkType = 'cfi' | 'text';
 export type LinkStyle = 'auto' | 'wiki' | 'markdown';
 export type OpenTarget = 'split' | 'tab' | 'current';
@@ -53,9 +59,30 @@ export interface EppSettings {
 	sidebarOpen: boolean;
 	/** Mobile: open the EPUB++ menu when a selection settles. */
 	selectionBar: boolean;
+	/** Order and visibility of selection menu items: `link`, `alt-link`, `text`, `format:<id>`. */
+	selectionMenu: MenuEntry[];
+	/** Order and visibility of highlight menu items: `open`, `color`, `copy-link`. */
+	highlightMenu: MenuEntry[];
+	/** Bumped when settings need a one-time migration. */
+	settingsVersion: number;
 	/** Last reading position per EPUB path. */
 	positions: Record<string, string>;
 }
+
+/** Asks for a comment: the quote is nested inside the callout, the comment follows it. */
+export const COMMENT_TEMPLATE = '> [!quote|{{color}}] {{link}}\n> > {{text}}\n>\n> {{comment}}';
+
+export const SELECTION_MENU_LABELS: Record<string, string> = {
+	link: 'Copy link',
+	'alt-link': 'Copy alternate link (CFI ↔ text fragment)',
+	text: 'Copy text',
+};
+
+export const HIGHLIGHT_MENU_LABELS: Record<string, string> = {
+	open: 'Open the note',
+	color: 'Change color',
+	'copy-link': 'Copy link',
+};
 
 export const DEFAULT_SETTINGS: EppSettings = {
 	reader: { ...READER_DEFAULTS },
@@ -75,8 +102,12 @@ export const DEFAULT_SETTINGS: EppSettings = {
 	copyFormats: [
 		{ id: 'callout', name: 'Callout', template: '> [!quote|{{color}}] {{link}}\n> {{text}}' },
 		{ id: 'quote', name: 'Quote', template: '> {{text}}\n\n{{link}}' },
+		{ id: 'callout-comment', name: 'Callout with comment', template: COMMENT_TEMPLATE },
 		{ id: 'text-with-link', name: 'Text with link', template: '{{text}} ({{link}})' },
 	],
+	selectionMenu: [],
+	highlightMenu: [],
+	settingsVersion: 2,
 	copyAction: 'text',
 	noColor: 'default',
 	jumpHighlight: true,
@@ -93,4 +124,27 @@ export const DEFAULT_SETTINGS: EppSettings = {
 
 export function newFormatId(): string {
 	return Math.random().toString(36).slice(2, 10);
+}
+
+/** Templates with {{comment}} ask for a comment before copying. */
+export function needsComment(template: string): boolean {
+	return template.includes('{{comment}}');
+}
+
+/** Keep a configured menu in sync with the available items: drop unknown ids, append new ones (shown). */
+export function syncMenu(entries: MenuEntry[], ids: string[]): MenuEntry[] {
+	const known = new Set(ids);
+	const out = entries.filter((e) => known.has(e.id));
+	const present = new Set(out.map((e) => e.id));
+	for (const id of ids) if (!present.has(id)) out.push({ id, show: true });
+	return out;
+}
+
+export function selectionMenuIds(s: EppSettings): string[] {
+	return ['link', ...s.copyFormats.map((f) => `format:${f.id}`), 'alt-link', 'text'];
+}
+
+export function syncMenus(s: EppSettings): void {
+	s.selectionMenu = syncMenu(s.selectionMenu ?? [], selectionMenuIds(s));
+	s.highlightMenu = syncMenu(s.highlightMenu ?? [], Object.keys(HIGHLIGHT_MENU_LABELS));
 }

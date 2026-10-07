@@ -14,7 +14,8 @@ import {
 } from 'obsidian';
 import { HighlightIndex, resolveEpub, type HighlightEntry } from './highlight-index';
 import { formatLink, renderTemplate, setCalloutColor, setLinkColor } from './link-utils';
-import { DEFAULT_SETTINGS, newFormatId, type CopyAction, type CopyFormat, type EppSettings, type OpenTarget } from './settings';
+import { COMMENT_TEMPLATE, DEFAULT_SETTINGS, needsComment, newFormatId, syncMenus, type CopyAction, type CopyFormat, type EppSettings, type OpenTarget } from './settings';
+import { askForComment } from './comment-modal';
 import { registerEpubEmbeds } from './embed';
 import { EppSettingTab } from './setting-tab';
 import { EpubView, VIEW_TYPE_EPUB } from './view';
@@ -100,6 +101,13 @@ export default class EpubPlusPlus extends Plugin {
 		this.settings = { ...defaults, ...data, reader: { ...defaults.reader, ...(data.reader ?? {}) } };
 		// Formats saved before format ids existed.
 		for (const f of this.settings.copyFormats) f.id ||= newFormatId();
+		if ((data.settingsVersion ?? 1) < 2) {
+			// v2 added the comment callout format; offer it to existing setups once.
+			if (!this.settings.copyFormats.some((f) => needsComment(f.template)))
+				this.settings.copyFormats.splice(1, 0, { id: 'callout-comment', name: 'Callout with comment', template: COMMENT_TEMPLATE });
+			this.settings.settingsVersion = 2;
+		}
+		syncMenus(this.settings);
 	}
 
 	async saveSettings(): Promise<void> {
@@ -340,10 +348,15 @@ export default class EpubPlusPlus extends Plugin {
 	}
 
 	/** The clipboard text for a selection (synchronous, so it can run inside a `copy` event). */
-	renderCopy(view: EpubView, info: SelectionInfo, what: CopyTarget, color: string | null): string {
+	renderCopy(view: EpubView, info: SelectionInfo, what: CopyTarget, color: string | null, comment = ''): string {
 		if (what === 'text') return info.text;
 		const link = this.buildLink(view, info, color, what === 'alt-link');
-		return typeof what === 'string' ? link : renderTemplate(what.template, this.templateVars(view, info, color, link));
+		return typeof what === 'string' ? link : renderTemplate(what.template, { ...this.templateVars(view, info, color, link), comment });
+	}
+
+	/** True when copying with this target first asks for a comment ({{comment}} in the template). */
+	asksForComment(what: CopyTarget): boolean {
+		return typeof what === 'object' && needsComment(what.template);
 	}
 
 	copyLabel(what: CopyTarget): string {
@@ -354,7 +367,13 @@ export default class EpubPlusPlus extends Plugin {
 	}
 
 	async copy(view: EpubView, info: SelectionInfo, what: CopyTarget, color: string | null): Promise<void> {
-		await navigator.clipboard.writeText(this.renderCopy(view, info, what, color));
+		let comment = '';
+		if (this.asksForComment(what)) {
+			const c = await askForComment(this.app, info.text);
+			if (c === null) return;
+			comment = c;
+		}
+		await navigator.clipboard.writeText(this.renderCopy(view, info, what, color, comment));
 		new Notice(`Copied ${this.copyLabel(what)} to clipboard`);
 	}
 

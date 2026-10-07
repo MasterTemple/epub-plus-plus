@@ -1,7 +1,7 @@
 import { PluginSettingTab, Setting, debounce, type App } from 'obsidian';
 import { buildAppearanceControls } from './appearance';
 import type EpubPlusPlus from './main';
-import { newFormatId, type CopyAction, type LinkStyle, type LinkType, type OpenTarget } from './settings';
+import { HIGHLIGHT_MENU_LABELS, SELECTION_MENU_LABELS, newFormatId, syncMenus, type CopyAction, type LinkStyle, type LinkType, type OpenTarget } from './settings';
 
 export class EppSettingTab extends PluginSettingTab {
 	constructor(
@@ -9,6 +9,51 @@ export class EppSettingTab extends PluginSettingTab {
 		private plugin: EpubPlusPlus,
 	) {
 		super(app, plugin);
+	}
+
+	/** Reorderable, toggleable list of menu items. */
+	private menuEditor(container: HTMLElement, title: string, key: 'selectionMenu' | 'highlightMenu', label: (id: string) => string): void {
+		const s = this.plugin.settings;
+		const list = s[key];
+		new Setting(container).setName(title).setDesc(key === 'selectionMenu' ? 'On mobile, "System menu" is always added last.' : '');
+		const box = container.createDiv('epp-menu-editor');
+		list.forEach((entry, i) => {
+			const row = new Setting(box).setName(label(entry.id));
+			row.settingEl.addClass('epp-menu-editor-row');
+			row.settingEl.toggleClass('is-hidden-item', !entry.show);
+			row.addExtraButton((b) =>
+				b
+					.setIcon('arrow-up')
+					.setTooltip('Move up')
+					.setDisabled(i === 0)
+					.onClick(async () => {
+						[list[i - 1], list[i]] = [list[i], list[i - 1]];
+						await this.plugin.saveSettings();
+						this.display();
+					}),
+			);
+			row.addExtraButton((b) =>
+				b
+					.setIcon('arrow-down')
+					.setTooltip('Move down')
+					.setDisabled(i === list.length - 1)
+					.onClick(async () => {
+						[list[i + 1], list[i]] = [list[i], list[i + 1]];
+						await this.plugin.saveSettings();
+						this.display();
+					}),
+			);
+			row.addToggle((t) =>
+				t
+					.setTooltip('Show in menu')
+					.setValue(entry.show)
+					.onChange(async (v) => {
+						entry.show = v;
+						row.settingEl.toggleClass('is-hidden-item', !v);
+						await this.plugin.saveSettings();
+					}),
+			);
+		});
 	}
 
 	override display(): void {
@@ -118,7 +163,7 @@ export class EppSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName('Copy formats').setHeading();
 		containerEl.createEl('p', {
 			cls: 'setting-item-description',
-			text: 'Shown in the right-click menu. Variables: {{text}}, {{link}}, {{color}}, {{book}}, {{author}}, {{chapter}}, {{cfi}}, {{file}}, {{path}}. Multi-line text keeps the "> " prefix of its line.',
+			text: 'Shown in the right-click menu. Variables: {{text}}, {{link}}, {{color}}, {{book}}, {{author}}, {{chapter}}, {{cfi}}, {{file}}, {{path}}, and {{comment}} (asks for a comment when copying). Multi-line values keep the "> " prefix of their line.',
 		});
 		s.copyFormats.forEach((fmt, i) => {
 			new Setting(containerEl)
@@ -147,6 +192,7 @@ export class EppSettingTab extends PluginSettingTab {
 						.onClick(async () => {
 							s.copyFormats.splice(i, 1);
 							if (s.copyAction === `format:${fmt.id}`) s.copyAction = 'text';
+							syncMenus(s);
 							await save();
 							this.plugin.syncFormatCommands();
 							this.display();
@@ -156,11 +202,27 @@ export class EppSettingTab extends PluginSettingTab {
 		new Setting(containerEl).addButton((b) =>
 			b.setButtonText('Add format').onClick(async () => {
 				s.copyFormats.push({ id: newFormatId(), name: 'New format', template: '{{text}} {{link}}' });
+				syncMenus(s);
 				await save();
 				this.plugin.syncFormatCommands();
 				this.display();
 			}),
 		);
+
+		new Setting(containerEl).setName('Context menus').setHeading();
+		containerEl.createEl('p', {
+			cls: 'setting-item-description',
+			text: 'Choose which items appear in the right-click / tap menus, and their order.',
+		});
+		this.menuEditor(containerEl, 'Selection menu', 'selectionMenu', (id) => {
+			if (id.startsWith('format:')) {
+				const f = s.copyFormats.find((x) => `format:${x.id}` === id);
+				return f ? `Copy as ${f.name.toLowerCase()}` : id;
+			}
+			if (id === 'alt-link') return s.linkType === 'cfi' ? 'Copy text-fragment link' : 'Copy CFI link';
+			return SELECTION_MENU_LABELS[id] ?? id;
+		});
+		this.menuEditor(containerEl, 'Highlight menu', 'highlightMenu', (id) => HIGHLIGHT_MENU_LABELS[id] ?? id);
 
 		new Setting(containerEl).setName('Highlights').setHeading();
 		new Setting(containerEl)
