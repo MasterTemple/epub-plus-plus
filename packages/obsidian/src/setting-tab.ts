@@ -1,7 +1,7 @@
 import { PluginSettingTab, Setting, debounce, type App } from 'obsidian';
 import { buildAppearanceControls } from './appearance';
 import type EpubPlusPlus from './main';
-import { HIGHLIGHT_MENU_LABELS, SELECTION_MENU_LABELS, newFormatId, syncMenus, type CopyAction, type LinkStyle, type LinkType, type OpenTarget } from './settings';
+import { HIGHLIGHT_MENU_LABELS, SELECTION_MENU_LABELS, newFormatId, syncMenus, type AnnotationMode, type CopyAction, type LinkStyle, type LinkType, type OpenTarget } from './settings';
 
 export class EppSettingTab extends PluginSettingTab {
 	constructor(
@@ -302,6 +302,54 @@ export class EppSettingTab extends PluginSettingTab {
 				this.display();
 			}),
 		);
+
+		new Setting(containerEl).setName('Annotation files').setHeading();
+		containerEl.createEl('p', {
+			cls: 'setting-item-description',
+			text: 'An annotation file is a note with a heading per chapter (from the table of contents), linked to the book by its "epub" property. Create one from the Highlights tab, the EPUB tab menu, or the command palette. While a book has one, copying from the selection menu can insert the annotation in the right chapter, in book order.',
+		});
+		new Setting(containerEl)
+			.setName('When copying a selection')
+			.setDesc('Default for books with an annotation file. Each file can override it (the Copy / Insert / Both row in the selection menu, saved in its "epub-annotation-mode" property).')
+			.addDropdown((d) =>
+				d
+					.addOptions({ copy: 'Copy to clipboard', insert: 'Insert into the annotation file', both: 'Copy and insert' })
+					.setValue(s.annotationMode)
+					.onChange(async (v) => {
+						s.annotationMode = v as AnnotationMode;
+						await save();
+					}),
+			);
+		new Setting(containerEl)
+			.setName('Folder for new annotation files')
+			.setDesc('Leave empty to create them next to the EPUB.')
+			.addText((t) =>
+				t
+					.setPlaceholder('e.g. Reading/Annotations')
+					.setValue(s.annotationFolder)
+					.onChange(async (v) => {
+						s.annotationFolder = v;
+						await save();
+					}),
+			);
+		new Setting(containerEl)
+			.setName('File name')
+			.setDesc('Variables: {{book}}, {{author}}, {{file}}.')
+			.addText((t) =>
+				t.setValue(s.annotationFileName).onChange(async (v) => {
+					s.annotationFileName = v;
+					await save();
+				}),
+			);
+		new Setting(containerEl)
+			.setName('Place text-fragment links exactly')
+			.setDesc('Locate text-fragment annotations in the book to order new ones among them. Turn off if inserting is slow; they are then added at the end of the chapter section.')
+			.addToggle((t) =>
+				t.setValue(s.annotationResolveTextFragments).onChange(async (v) => {
+					s.annotationResolveTextFragments = v;
+					await save();
+				}),
+			);
 
 		new Setting(containerEl).setName('Jumping to a passage').setHeading();
 		const applyFlash = () => {

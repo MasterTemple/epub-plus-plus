@@ -1,6 +1,7 @@
 import { EpubBook, EpubReader, parseLocator, type HighlightSpec, type SelectionInfo, type TocItem } from '@epub-pp/core';
 import { FileView, Menu, Notice, Platform, Scope, TFile, setIcon, type MenuItem, type WorkspaceLeaf } from 'obsidian';
 import type { HighlightEntry } from './highlight-index';
+import { ANNOTATION_MODES, type AnnotationMode } from './settings';
 import type EpubPlusPlus from './main';
 import { HOVER_SOURCE, VIEW_TYPE_EPUB } from './constants';
 import { AppearancePanel } from './appearance';
@@ -430,7 +431,15 @@ export class EpubView extends FileView {
 			this.plugin.copy(this, sel, what, this.activeColor);
 			return;
 		}
-		e.clipboardData.setData('text/plain', this.plugin.renderCopy(this, sel, what, this.activeColor));
+		const text = this.plugin.renderCopy(this, sel, what, this.activeColor);
+		e.clipboardData.setData('text/plain', text);
+		// Ctrl/Cmd+C always copies; it also inserts when the annotation file's mode asks for it.
+		const ann = this.file ? this.plugin.annotations.find(this.file) : null;
+		if (ann && this.plugin.annotations.mode(ann) !== 'copy') {
+			e.preventDefault();
+			this.plugin.addToAnnotationFile(this, ann, sel, text, true);
+			return;
+		}
 		e.preventDefault();
 		new Notice(`Copied ${this.plugin.copyLabel(what)}`);
 	}
@@ -558,6 +567,49 @@ export class EpubView extends FileView {
 				this.addColorItem(menu, `Copy as ${lower}${this.plugin.asksForComment(fmt) ? '…' : ''}`, icon, section, (c) => this.plugin.copy(this, info, fmt, c));
 			}
 		}
+		const ann = this.file && this.plugin.annotations.find(this.file);
+		if (ann) this.addAnnotationModeRow(menu, ann);
+	}
+
+	/** `[Copy | Insert | Both]`: what the items above do for this book's annotation file. */
+	private addAnnotationModeRow(menu: Menu, ann: TFile): void {
+		menu.addItem((item) => {
+			item.setSection('epp-annotation');
+			const dom = (item as MenuItem & { dom?: HTMLElement }).dom;
+			if (!dom) return;
+			dom.empty();
+			dom.addClass('epp-mode-row');
+			dom.setAttr('aria-label', `When copying, for ${ann.basename}`);
+			const labels: Record<AnnotationMode, string> = { copy: 'Copy', insert: 'Insert', both: 'Both' };
+			const buttons: HTMLElement[] = [];
+			const current = this.plugin.annotations.mode(ann);
+			for (const mode of ANNOTATION_MODES) {
+				const b = dom.createDiv({ cls: 'epp-mode-button', text: labels[mode] });
+				b.toggleClass('is-active', mode === current);
+				buttons.push(b);
+				for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend'])
+					b.addEventListener(type, (e) => e.stopPropagation());
+				b.addEventListener('click', async (e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					buttons.forEach((x) => x.toggleClass('is-active', x === b));
+					await this.plugin.annotations.setMode(ann, mode);
+				});
+			}
+		});
+	}
+
+	override onPaneMenu(menu: Menu, source: string): void {
+		super.onPaneMenu(menu, source);
+		if (!this.file || !this.reader) return;
+		const ann = this.plugin.annotations.find(this.file);
+		menu.addItem((i) =>
+			i
+				.setTitle(ann ? 'Open annotation file' : 'Create annotation file')
+				.setIcon('notebook-pen')
+				.setSection('open')
+				.onClick(() => this.plugin.openAnnotationFile(this)),
+		);
 	}
 
 	/** Highlight menu, in the order and with the items configured in settings. */

@@ -15,6 +15,7 @@ import {
 import { HighlightIndex, resolveEpub, type HighlightEntry } from './highlight-index';
 import { formatLink, renderTemplate, setCalloutColor, setLinkColor } from './link-utils';
 import { COMMENT_TEMPLATE, DEFAULT_SETTINGS, needsComment, newFormatId, syncMenus, type CopyAction, type CopyFormat, type EppSettings, type OpenTarget } from './settings';
+import { Annotations } from './annotations';
 import { askForComment } from './comment-modal';
 import { registerEpubEmbeds } from './embed';
 import { EppSettingTab } from './setting-tab';
@@ -27,6 +28,7 @@ export type CopyTarget = CopyFormat | 'link' | 'alt-link' | 'text';
 export default class EpubPlusPlus extends Plugin {
 	declare settings: EppSettings;
 	index!: HighlightIndex;
+	annotations = new Annotations(this);
 	private calloutStyle: HTMLStyleElement | null = null;
 	private savePositionsTimer = 0;
 
@@ -310,13 +312,17 @@ export default class EpubPlusPlus extends Plugin {
 
 	/** Build a link to a selection. `alternate` swaps the configured link type (CFI ↔ text fragment). */
 	buildLink(view: EpubView, info: SelectionInfo, color: string | null, alternate = false): string {
-		const file = view.file!;
 		const useText = (this.settings.linkType === 'text') !== alternate;
 		const locator = (useText && info.textFragment()) || info.cfi;
-		const subpath = formatLocator(locator, { color: this.settings.colorInLinks && color ? color : undefined });
-		const sourcePath = this.app.workspace.getActiveViewOfType(MarkdownView)?.file?.path ?? this.lastMarkdownPath() ?? '';
-		const linktext = this.app.metadataCache.fileToLinktext(file, sourcePath, false);
 		const alias = renderTemplate(this.settings.aliasTemplate, this.templateVars(view, info, color, ''));
+		return this.epubLink(view.file!, locator, alias, this.settings.colorInLinks ? color : null);
+	}
+
+	/** A link (wiki or markdown, per settings) to a locator in an EPUB. */
+	epubLink(file: TFile, locator: string, alias: string, color: string | null = null, sourcePath?: string): string {
+		const subpath = formatLocator(locator, { color: color ?? undefined });
+		const from = sourcePath ?? this.app.workspace.getActiveViewOfType(MarkdownView)?.file?.path ?? this.lastMarkdownPath() ?? '';
+		const linktext = this.app.metadataCache.fileToLinktext(file, from, false);
 		return formatLink(linktext, subpath, alias, this.linkStyle());
 	}
 
@@ -366,6 +372,10 @@ export default class EpubPlusPlus extends Plugin {
 		return what.name.toLowerCase();
 	}
 
+	/**
+	 * Copy a selection. When the book has an annotation file, it may also (or instead) be inserted
+	 * there, depending on the file's mode.
+	 */
 	async copy(view: EpubView, info: SelectionInfo, what: CopyTarget, color: string | null): Promise<void> {
 		let comment = '';
 		if (this.asksForComment(what)) {
@@ -373,8 +383,46 @@ export default class EpubPlusPlus extends Plugin {
 			if (c === null) return;
 			comment = c;
 		}
-		await navigator.clipboard.writeText(this.renderCopy(view, info, what, color, comment));
-		new Notice(`Copied ${this.copyLabel(what)} to clipboard`);
+		const text = this.renderCopy(view, info, what, color, comment);
+		const ann = what !== 'text' && view.file ? this.annotations.find(view.file) : null;
+		const mode = ann ? this.annotations.mode(ann) : 'copy';
+		if (mode !== 'insert') await navigator.clipboard.writeText(text);
+		if (ann && mode !== 'copy') await this.addToAnnotationFile(view, ann, info, text, mode === 'both');
+		else new Notice(`Copied ${this.copyLabel(what)} to clipboard`);
+	}
+
+	async addToAnnotationFile(view: EpubView, ann: TFile, info: SelectionInfo, text: string, copied: boolean): Promise<void> {
+		try {
+			const p = await this.annotations.insert(view, ann, info, text);
+			const where = `${ann.basename}${p.heading ? ` › ${p.heading}` : ''}`;
+			new Notice(`${copied ? 'Copied and added' : 'Added'} to ${where}${p.appended ? ' (at the end of the section)' : ''}`);
+		} catch (e) {
+			console.error('[epub-pp] could not add to annotation file', e);
+			new Notice(`EPUB++: could not add to ${ann.basename}: ${(e as Error).message}`);
+		}
+	}
+
+	/** Open (or reveal) a note, preferring another split than the EPUB's. */
+	async openNote(file: TFile, fromView?: EpubView): Promise<void> {
+		const { workspace } = this.app;
+		const open = workspace.getLeavesOfType('markdown').find((l) => (l.view as MarkdownView).file?.path === file.path);
+		if (open) return void workspace.revealLeaf(open);
+		const other = fromView && workspace.getLeavesOfType('markdown').find((l) => l.getRoot() === fromView.leaf.getRoot() && l.parent !== fromView.leaf.parent);
+		const leaf = Platform.isPhone || !fromView ? workspace.getLeaf('tab') : (other ?? workspace.createLeafBySplit(fromView.leaf, 'vertical'));
+		await leaf.openFile(file, { active: true });
+	}
+
+	/** Create (if needed) and open the annotation file of the book in `view`. */
+	async openAnnotationFile(view: EpubView): Promise<void> {
+		if (!view.file) return;
+		const existed = this.annotations.find(view.file);
+		try {
+			const file = existed ?? (await this.annotations.create(view));
+			if (!existed) new Notice(`Created ${file.path}`);
+			await this.openNote(file, view);
+		} catch (e) {
+			new Notice(`EPUB++: ${(e as Error).message}`);
+		}
 	}
 
 	// --------------------------------------------------------------------------------------------
@@ -390,6 +438,7 @@ export default class EpubPlusPlus extends Plugin {
 		};
 		this.addCommand({ id: 'toggle-sidebar', name: 'Toggle table of contents / search sidebar', checkCallback: withView((v) => v.toggleSidebar()) });
 		this.addCommand({ id: 'search', name: 'Search in EPUB', checkCallback: withView((v) => v.openSearch()) });
+		this.addCommand({ id: 'annotation-file', name: 'Open or create annotation file', checkCallback: withView((v) => this.openAnnotationFile(v)) });
 		this.addCommand({ id: 'appearance', name: 'Reading appearance', checkCallback: withView((v) => v.toggleAppearance()) });
 		this.addCommand({ id: 'font-increase', name: 'Increase font size', checkCallback: withView(() => this.updateReaderSettings({ fontSize: Math.min(48, this.settings.reader.fontSize + 1) })) });
 		this.addCommand({ id: 'font-decrease', name: 'Decrease font size', checkCallback: withView(() => this.updateReaderSettings({ fontSize: Math.max(8, this.settings.reader.fontSize - 1) })) });

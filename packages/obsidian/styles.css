@@ -551,3 +551,62 @@ body.epp-appearance-open .mobile-navbar {
 	min-width: 72px;
 	max-width: 240px;
 }
+
+/* ---------- Annotation mode row (selection menu) ---------- */
+.menu-item.epp-mode-row {
+	display: flex;
+	gap: 0;
+	padding: var(--size-4-1);
+	cursor: default;
+}
+.menu-item.epp-mode-row:hover,
+.menu-item.epp-mode-row.selected {
+	background: transparent;
+}
+.epp-mode-button {
+	flex: 1 1 0;
+	text-align: center;
+	padding: 4px 8px;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	border: var(--border-width) solid var(--background-modifier-border);
+	cursor: pointer;
+}
+.epp-mode-button + .epp-mode-button {
+	border-inline-start: none;
+}
+.epp-mode-button:first-child {
+	border-radius: var(--radius-s) 0 0 var(--radius-s);
+}
+.epp-mode-button:last-child {
+	border-radius: 0 var(--radius-s) var(--radius-s) 0;
+}
+.epp-mode-button:hover {
+	background: var(--background-modifier-hover);
+}
+.epp-mode-button.is-active {
+	background: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+.is-mobile .epp-mode-button {
+	padding: 10px 8px;
+	font-size: var(--font-ui-medium);
+}
+
+/* ---------- Highlights tab toolbar ---------- */
+.epp-hl-toolbar {
+	display: flex;
+	margin: 0 2px var(--size-4-2);
+}
+.epp-hl-annotation-button {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	justify-content: center;
+}
+.epp-hl-annotation-button svg {
+	width: 16px;
+	height: 16px;
+}

@@ -22,6 +22,12 @@ export interface MenuEntry {
 }
 
 export type LinkType = 'cfi' | 'text';
+/** What copying a selection does when the book has an annotation file. */
+export type AnnotationMode = 'copy' | 'insert' | 'both';
+export const ANNOTATION_MODES: AnnotationMode[] = ['copy', 'insert', 'both'];
+/** Frontmatter keys of annotation files. */
+export const ANNOTATION_EPUB_KEY = 'epub';
+export const ANNOTATION_MODE_KEY = 'epub-annotation-mode';
 export type LinkStyle = 'auto' | 'wiki' | 'markdown';
 export type OpenTarget = 'split' | 'tab' | 'current';
 
@@ -63,6 +69,14 @@ export interface EppSettings {
 	selectionMenu: MenuEntry[];
 	/** Order and visibility of highlight menu items: `open`, `color`, `copy-link`. */
 	highlightMenu: MenuEntry[];
+	/** Folder for new annotation files; empty = next to the EPUB. */
+	annotationFolder: string;
+	/** File name (without .md). Variables: {{book}} {{author}} {{file}} */
+	annotationFileName: string;
+	/** Default for books with an annotation file (a file can override it in its frontmatter). */
+	annotationMode: AnnotationMode;
+	/** Resolve text-fragment links in annotation files to CFIs to place new annotations exactly. */
+	annotationResolveTextFragments: boolean;
 	/** Bumped when settings need a one-time migration. */
 	settingsVersion: number;
 	/** Last reading position per EPUB path. */
@@ -105,6 +119,10 @@ export const DEFAULT_SETTINGS: EppSettings = {
 		{ id: 'callout-comment', name: 'Callout with comment', template: COMMENT_TEMPLATE },
 		{ id: 'text-with-link', name: 'Text with link', template: '{{text}} ({{link}})' },
 	],
+	annotationFolder: '',
+	annotationFileName: '{{book}} - Annotations',
+	annotationMode: 'both',
+	annotationResolveTextFragments: true,
 	selectionMenu: [],
 	highlightMenu: [],
 	settingsVersion: 2,

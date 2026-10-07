@@ -1,4 +1,4 @@
-import { parseLocator } from '@epub-pp/core';
+import { parseLocator, tryParseCfi } from '@epub-pp/core';
 import { Events, TFile, parseLinktext, type App, type CachedMetadata, type Pos, type ReferenceCache } from 'obsidian';
 
 export interface HighlightEntry {
@@ -102,6 +102,8 @@ export class HighlightIndex extends Events {
 		const loc = parseLocator(subpath);
 		const locator = loc.cfi ?? loc.textFragment;
 		if (!locator) return null;
+		// A point CFI is a position (e.g. annotation file headings), not a highlight.
+		if (loc.cfi && !tryParseCfi(loc.cfi)?.range) return null;
 		return {
 			id: `${sourcePath}:${ref.position.start.offset}`,
 			epubPath: file.path,

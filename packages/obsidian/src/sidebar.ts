@@ -255,6 +255,12 @@ export class Sidebar {
 	setHighlights(entries: HighlightEntry[]): void {
 		const el = this.highlightsEl;
 		el.empty();
+		const bar = el.createDiv('epp-hl-toolbar');
+		const btn = bar.createEl('button', { cls: 'epp-hl-annotation-button' });
+		setIcon(btn.createSpan(), 'notebook-pen');
+		btn.createSpan({ text: 'Annotation file' });
+		btn.setAttr('aria-label', 'Open (or create) the annotation file for this book');
+		btn.addEventListener('click', () => this.view.plugin.openAnnotationFile(this.view));
 		if (!entries.length) {
 			el.createDiv({ cls: 'epp-empty', text: 'No highlights yet. Select text, right-click and copy a link into a note.' });
 			return;

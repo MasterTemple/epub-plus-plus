@@ -35,6 +35,10 @@ The repo has two packages:
   - Formats with `{{comment}}` ask for a comment first. The default *Callout with comment* nests the quote and puts your comment below it.
   - Which items appear in the selection and highlight menus, and in what order, is configurable.
   - Ctrl/Cmd+C copies with a chosen action, and every copy style is a command you can bind to a hotkey.
+- **Annotation files.** A note per book with a heading per TOC entry; each heading links to its chapter with a point CFI, so it never draws a highlight. The note is tied to the book by its `epub` property.
+  - While a book has one, copying from the selection menu can **insert** the annotation into the right chapter section, in book order. Placement uses a binary search over existing blocks by their CFI.
+  - Text-fragment links are located in the book to compare them; this can be turned off. When the position is unclear, the annotation is appended to the end of the section.
+  - *Copy*, *Insert* or *Both* is a global default, overridable per file via its `epub-annotation-mode` property or the row in the selection menu.
 - **Sidebar.** The in-view sidebar has a table of contents (tracks the current chapter), search (case / whole word / regex, results grouped by chapter, Enter / Shift+Enter to step through), and a list of the book's highlights.
 - **Backlinks.** Obsidian's Backlinks pane works for EPUBs. Hovering a backlink underlines its passage and scrolls to it.
 - **Appearance.** Theme (match Obsidian, light, sepia, dark, publisher), font size and family, line spacing, alignment, reading width (`em`, `ch`, `px`, `%`), margins, and image dimming.
