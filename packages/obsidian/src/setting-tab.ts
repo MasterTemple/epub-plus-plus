@@ -1,7 +1,7 @@
 import { PluginSettingTab, Setting, debounce, type App } from 'obsidian';
-import { buildAppearanceControls } from './appearance';
+import { buildAppearanceControls, globalAppearance } from './appearance';
 import type EpubPlusPlus from './main';
-import { HIGHLIGHT_GESTURE_LABELS, HIGHLIGHT_MENU_LABELS, SELECTION_MENU_LABELS, type HighlightGestureAction, needsComment, newFormatId, syncMenus, type AnnotationMode, type CopyAction, type LinkStyle, type LinkType, type OpenTarget } from './settings';
+import { HIGHLIGHT_GESTURE_LABELS, HIGHLIGHT_MENU_LABELS, SELECTION_MENU_LABELS, altLinkLabel, formatMenuLabel, type AppearancePlatform, type HighlightGestureAction, needsComment, newFormatId, syncMenus, type AnnotationMode, type CopyAction, type LinkStyle, type LinkType, type OpenTarget } from './settings';
 
 export class EppSettingTab extends PluginSettingTab {
 	constructor(
@@ -9,6 +9,49 @@ export class EppSettingTab extends PluginSettingTab {
 		private plugin: EpubPlusPlus,
 	) {
 		super(app, plugin);
+	}
+
+	/** Which platform's appearance the Reading section edits (this device's by default). */
+	private appearancePlatform: AppearancePlatform | null = null;
+
+	private appearanceSection(containerEl: HTMLElement): void {
+		const plugin = this.plugin;
+		const platform = (this.appearancePlatform ??= plugin.platform);
+		new Setting(containerEl)
+			.setName('Appearance for')
+			.setDesc('Desktop and mobile (phones and tablets) keep separate appearance settings.')
+			.addDropdown((d) =>
+				d
+					.addOptions({ desktop: 'Desktop', mobile: 'Mobile' })
+					.setValue(platform)
+					.onChange((v) => {
+						this.appearancePlatform = v as AppearancePlatform;
+						this.display();
+					}),
+			);
+		buildAppearanceControls(containerEl.createDiv(), globalAppearance(plugin, platform));
+
+		const books = Object.entries(plugin.settings.bookAppearance).filter(([, b]) => b[platform] && Object.keys(b[platform]!).length);
+		if (!books.length) return;
+		new Setting(containerEl)
+			.setName('Books with their own appearance')
+			.setDesc(`Set from a book's Appearance panel ("This book"). Their own settings win over the ones above on ${platform}.`);
+		for (const [path, b] of books) {
+			const keys = Object.keys(b[platform]!).join(', ');
+			new Setting(containerEl)
+				.setClass('epp-subsetting')
+				.setName(path.split('/').pop()!.replace(/\.epub$/i, ''))
+				.setDesc(keys)
+				.addExtraButton((x) =>
+					x
+						.setIcon('rotate-ccw')
+						.setTooltip('Use the settings for all books')
+						.onClick(async () => {
+							await plugin.resetBookAppearance(path, platform);
+							this.display();
+						}),
+				);
+		}
 	}
 
 	/** Reorderable, toggleable list of menu items. */
@@ -64,7 +107,7 @@ export class EppSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl).setName('Reading').setHeading();
-		buildAppearanceControls(containerEl.createDiv(), this.plugin);
+		this.appearanceSection(containerEl);
 
 		new Setting(containerEl).setName('Links').setHeading();
 		new Setting(containerEl)
@@ -235,9 +278,9 @@ export class EppSettingTab extends PluginSettingTab {
 		this.menuEditor(containerEl, 'Selection menu', 'selectionMenu', (id) => {
 			if (id.startsWith('format:')) {
 				const f = s.copyFormats.find((x) => `format:${x.id}` === id);
-				return f ? `Copy as ${f.name.toLowerCase()}` : id;
+				return f ? formatMenuLabel(f.name) : id;
 			}
-			if (id === 'alt-link') return s.linkType === 'cfi' ? 'Copy text-fragment link' : 'Copy CFI link';
+			if (id === 'alt-link') return altLinkLabel(s.linkType);
 			return SELECTION_MENU_LABELS[id] ?? id;
 		});
 		this.menuEditor(containerEl, 'Highlight menu', 'highlightMenu', (id) => HIGHLIGHT_MENU_LABELS[id] ?? id);

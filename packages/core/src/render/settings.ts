@@ -134,5 +134,17 @@ export const BASE_CSS = /* css */ `
 	.epp-themed .epp-html a[href] { color: var(--epp-link-color); }
 	.epp-html table { max-width: 100%; }
 	.epp-html pre { white-space: pre-wrap; }
+	/* Footnote references: small and raised. A publisher's <sup> around or inside the link isn't shrunk twice. */
+	.epp-html :is(a[data-epub-type~="noteref"], a[role="doc-noteref"]):not(sup a),
+	.epp-html sup:has(a[data-epub-type~="noteref"], a[role="doc-noteref"]) {
+		font-size: 0.7em;
+		vertical-align: super;
+		line-height: 0;
+	}
+	.epp-html :is(a[data-epub-type~="noteref"], a[role="doc-noteref"]) sup,
+	.epp-html sup :is(a[data-epub-type~="noteref"], a[role="doc-noteref"]) {
+		font-size: inherit;
+		vertical-align: baseline;
+	}
 }
 `;

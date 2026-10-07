@@ -1,7 +1,7 @@
 import { EpubBook, EpubReader, parseLocator, type HighlightSpec, type LayerHit, type SelectionInfo, type TocItem } from '@epub-pp/core';
 import { FileView, Menu, Notice, Platform, Scope, TFile, setIcon, type MenuItem, type WorkspaceLeaf } from 'obsidian';
 import type { HighlightEntry } from './highlight-index';
-import { ANNOTATION_MODES, type AnnotationMode, type HighlightGestureAction } from './settings';
+import { ANNOTATION_MODES, SELECTION_MENU_LABELS, altLinkLabel, formatMenuLabel, type AnnotationMode, type HighlightGestureAction } from './settings';
 import type EpubPlusPlus from './main';
 import { HOVER_SOURCE, VIEW_TYPE_EPUB, layerId } from './constants';
 import { AppearancePanel } from './appearance';
@@ -99,7 +99,7 @@ export class EpubView extends FileView {
 		};
 		navButton('chevron-up', 'Previous result', -1);
 		navButton('chevron-down', 'Next result', 1);
-		this.appearance = new AppearancePanel(this.plugin, this.mainEl.createDiv('epp-appearance'));
+		this.appearance = new AppearancePanel(this.plugin, this.mainEl.createDiv('epp-appearance'), () => this.file?.path);
 		this.commentCard = this.addChild(new CommentCard(this.app, this.mainEl));
 		this.annotationTip = new AnnotationTip(this.mainEl);
 		this.register(() => this.annotationTip.destroy());
@@ -160,7 +160,7 @@ export class EpubView extends FileView {
 			if (token !== this.loadToken) return book.destroy();
 			const s = this.plugin.settings;
 			const reader = new EpubReader(this.hostEl, book, {
-				settings: s.reader,
+				settings: this.plugin.readerSettings(file.path),
 				palette: this.plugin.paletteRecord(),
 				defaultColor: s.defaultColor,
 				highlightOpacity: s.highlightOpacity,
@@ -783,30 +783,30 @@ export class EpubView extends FileView {
 		const s = this.plugin.settings;
 		const section = 'epp-selection';
 		if (isParagraph) menu.addItem((i) => (i.setTitle('Paragraph') as any).setIsLabel?.(true).setSection?.(section));
+		// What the items below do for this book's annotation file.
+		const ann = this.file && this.plugin.annotations.find(this.file);
+		if (ann) this.addAnnotationModeRow(menu, ann, section);
 		for (const entry of s.selectionMenu) {
 			if (!entry.show) continue;
 			if (entry.id === 'link') {
-				this.addColorItem(menu, 'Copy link', 'link', section, (c) => this.plugin.copy(this, info, 'link', c));
+				this.addColorItem(menu, SELECTION_MENU_LABELS.link, 'link', section, (c) => this.plugin.copy(this, info, 'link', c));
 			} else if (entry.id === 'alt-link') {
 				menu.addItem((i) =>
 					i
-						.setTitle(s.linkType === 'cfi' ? 'Copy text-fragment link' : 'Copy CFI link')
+						.setTitle(altLinkLabel(s.linkType))
 						.setIcon('link-2')
 						.setSection(section)
 						.onClick(() => this.plugin.copy(this, info, 'alt-link', this.activeColor)),
 				);
 			} else if (entry.id === 'text') {
-				menu.addItem((i) => i.setTitle('Copy text').setIcon('copy').setSection(section).onClick(() => this.plugin.copy(this, info, 'text', null)));
+				menu.addItem((i) => i.setTitle(SELECTION_MENU_LABELS.text).setIcon('copy').setSection(section).onClick(() => this.plugin.copy(this, info, 'text', null)));
 			} else if (entry.id.startsWith('format:')) {
 				const fmt = s.copyFormats.find((f) => `format:${f.id}` === entry.id);
 				if (!fmt) continue;
-				const lower = fmt.name.toLowerCase();
-				const icon = this.plugin.asksForComment(fmt) ? 'message-square-quote' : lower.includes('callout') ? 'quote' : 'clipboard-copy';
-				this.addColorItem(menu, `Copy as ${lower}${this.plugin.asksForComment(fmt) ? '…' : ''}`, icon, section, (c) => this.plugin.copy(this, info, fmt, c));
+				const icon = this.plugin.asksForComment(fmt) ? 'message-square-quote' : fmt.name.toLowerCase().includes('callout') ? 'quote' : 'clipboard-copy';
+				this.addColorItem(menu, `${formatMenuLabel(fmt.name)}${this.plugin.asksForComment(fmt) ? '…' : ''}`, icon, section, (c) => this.plugin.copy(this, info, fmt, c));
 			}
 		}
-		const ann = this.file && this.plugin.annotations.find(this.file);
-		if (ann) this.addAnnotationModeRow(menu, ann);
 	}
 
 	/** Prompt for a highlight's comment and write it into the note. */
@@ -821,10 +821,10 @@ export class EpubView extends FileView {
 		await this.plugin.setHighlightComment(entry, comment);
 	}
 
-	/** `[Copy | Insert | Both]`: what the items above do for this book's annotation file. */
-	private addAnnotationModeRow(menu: Menu, ann: TFile): void {
+	/** `[Copy | Insert | Both]`: what the selection items do for this book's annotation file. */
+	private addAnnotationModeRow(menu: Menu, ann: TFile, section: string): void {
 		menu.addItem((item) => {
-			item.setSection('epp-annotation');
+			item.setSection(section);
 			const dom = (item as MenuItem & { dom?: HTMLElement }).dom;
 			if (!dom) return;
 			dom.empty();

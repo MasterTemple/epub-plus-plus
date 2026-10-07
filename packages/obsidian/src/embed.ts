@@ -76,7 +76,7 @@ class EpubEmbed extends Component {
 			const locator = loc.cfi ?? loc.textFragment ?? loc.href;
 			this.reader?.destroy();
 			const reader = new EpubReader(this.host, book, {
-				settings: { ...s.reader, width: 0, margin: 16 },
+				settings: { ...plugin.readerSettings(file.path), width: 0, margin: 16 },
 				palette: plugin.paletteRecord(),
 				defaultColor: s.defaultColor,
 				highlightOpacity: s.highlightOpacity,

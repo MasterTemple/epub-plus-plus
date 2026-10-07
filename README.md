@@ -29,7 +29,7 @@ The repo has two packages:
 - **Highlight actions.**
   - Click a highlight to open the source note at that line.
   - Right-click it for *Change color* (rewrites `&color=` in the note, plus a surrounding `> [!quote|color]` callout header), *Open*, and *Copy link*.
-- **Copy menu on any text.** Right-click a selection to get *Copy link* plus your copy formats (callout, quote, …), or right-click without a selection to target the paragraph under the pointer.
+- **Copy menu on any text.** Right-click a selection to get *Link Only*, *Text Only* and your copy formats (*As Callout*, *As Quote*, …), with the *Copy | Insert | Both* row on top when the book has an annotation file, or right-click without a selection to target the paragraph under the pointer.
   - Tapping a colored item uses your previous color; its arrow opens a color picker.
   - Formats are templates (`{{text}}`, `{{link}}`, `{{color}}`, `{{chapter}}`, …), and multi-line values keep their `> ` prefix.
   - Formats with `{{comment}}` ask for a comment first. The default *Callout with comment* nests the quote and puts your comment below it.
@@ -55,7 +55,7 @@ The repo has two packages:
   - EPUB links preview on hover in Reading view, and in the editor without Ctrl/Cmd (toggle under Page preview).
   - Links inside a preview either jump within the preview or open the EPUB tab.
 - **Backlinks.** Obsidian's Backlinks pane works for EPUBs. Hovering a backlink underlines its passage and scrolls to it.
-- **Appearance.** Theme (match Obsidian, light, sepia, dark, publisher), font size and family, line spacing, alignment, reading width (`em`, `ch`, `px`, `%`), margins, and image dimming.
+- **Appearance.** Theme (match Obsidian, light, sepia, dark, publisher), font size and family, line spacing, alignment, reading width (`em`, `ch`, `px`, `%`), margins, and image dimming. Desktop and mobile keep separate settings, and any book can have its own (*This book* in the appearance panel). Footnote references are drawn small and raised.
 - **Mobile.**
   - Tapping, double-tapping and holding a highlight run configurable actions: open the note, add/edit comment, menu, color, copy link, or select the paragraph.
   - Selecting text, or double-tapping a paragraph, opens EPUB++'s menu. *System menu* hands the selection back to the OS toolbar.

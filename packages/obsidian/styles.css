@@ -803,3 +803,23 @@ body.epp-appearance-open .mobile-navbar {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 }
+
+/* ---------- Appearance scope (all books / this book) ---------- */
+.epp-appearance-scope {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	margin-top: var(--size-4-2);
+}
+.epp-appearance-scope .epp-segmented {
+	margin: 0;
+	flex: 1;
+}
+.epp-appearance-note {
+	margin: var(--size-4-1) 0 var(--size-4-2);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+.epp-appearance .setting-item.epp-overridden {
+	box-shadow: inset 3px 0 0 var(--interactive-accent);
+}

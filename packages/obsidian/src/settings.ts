@@ -42,8 +42,15 @@ export const ANNOTATION_MODE_KEY = 'epub-annotation-mode';
 export type LinkStyle = 'auto' | 'wiki' | 'markdown';
 export type OpenTarget = 'split' | 'tab' | 'current';
 
+/** Appearance is stored separately for desktop and mobile (phones and tablets). */
+export type AppearancePlatform = 'desktop' | 'mobile';
+export const APPEARANCE_PLATFORMS: AppearancePlatform[] = ['desktop', 'mobile'];
+
 export interface EppSettings {
-	reader: ReaderSettings;
+	/** Reader appearance for all books, per platform. */
+	appearance: Record<AppearancePlatform, ReaderSettings>;
+	/** Per-book overrides (EPUB path → platform → only the changed settings). */
+	bookAppearance: Record<string, Partial<Record<AppearancePlatform, Partial<ReaderSettings>>>>;
 	palette: PaletteColor[];
 	defaultColor: string;
 	/** Color picked last in a menu or the palette (null = no color); undefined until first pick. */
@@ -115,10 +122,27 @@ export interface EppSettings {
 export const COMMENT_TEMPLATE = '> [!quote|{{color}}] {{link}}\n> > {{text}}\n>\n> {{comment}}';
 
 export const SELECTION_MENU_LABELS: Record<string, string> = {
-	link: 'Copy link',
-	'alt-link': 'Copy alternate link (CFI ↔ text fragment)',
-	text: 'Copy text',
+	link: 'Link Only',
+	'alt-link': 'Alternate Link (CFI ↔ Text Fragment)',
+	text: 'Text Only',
 };
+
+const SMALL_WORDS = new Set(['a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'with']);
+
+/** "Callout with comment" → "Callout with Comment". */
+export function titleCase(text: string): string {
+	return text.replace(/[^\s-]+/g, (w, i: number) => (i > 0 && SMALL_WORDS.has(w.toLowerCase()) ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1)));
+}
+
+/** Selection-menu label of a copy format ("As Callout with Comment"). */
+export function formatMenuLabel(name: string): string {
+	return `As ${titleCase(name)}`;
+}
+
+/** Selection-menu label of the alternate link type. */
+export function altLinkLabel(linkType: LinkType): string {
+	return linkType === 'cfi' ? 'Text-Fragment Link' : 'CFI Link';
+}
 
 export const HIGHLIGHT_MENU_LABELS: Record<string, string> = {
 	open: 'Open the note',
@@ -128,7 +152,8 @@ export const HIGHLIGHT_MENU_LABELS: Record<string, string> = {
 };
 
 export const DEFAULT_SETTINGS: EppSettings = {
-	reader: { ...READER_DEFAULTS },
+	appearance: { desktop: { ...READER_DEFAULTS }, mobile: { ...READER_DEFAULTS } },
+	bookAppearance: {},
 	palette: [
 		{ name: 'yellow', color: '#ffd000' },
 		{ name: 'red', color: '#ff5f5f' },
@@ -160,7 +185,7 @@ export const DEFAULT_SETTINGS: EppSettings = {
 	highlightHold: 'menu',
 	selectionMenu: [],
 	highlightMenu: [],
-	settingsVersion: 2,
+	settingsVersion: 3,
 	copyAction: 'text',
 	saveAnnotationAs: 'format:callout',
 	hiddenProviders: [],

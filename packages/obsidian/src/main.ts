@@ -14,7 +14,7 @@ import {
 } from 'obsidian';
 import { HighlightIndex, resolveEpub, type HighlightEntry } from './highlight-index';
 import { formatLink, linkAt, renderTemplate, setCalloutColor, setLinkColor } from './link-utils';
-import { COMMENT_TEMPLATE, DEFAULT_SETTINGS, needsComment, newFormatId, syncMenus, type CopyAction, type CopyFormat, type EppSettings, type OpenTarget } from './settings';
+import { COMMENT_TEMPLATE, DEFAULT_SETTINGS, needsComment, newFormatId, syncMenus, type AppearancePlatform, type CopyAction, type CopyFormat, type EppSettings, type OpenTarget } from './settings';
 import { Annotations } from './annotations';
 import { askForComment } from './comment-modal';
 import { setComment } from './comment-utils';
@@ -239,15 +239,18 @@ export default class EpubPlusPlus extends Plugin {
 	async loadSettings(): Promise<void> {
 		const data = (await this.loadData()) ?? {};
 		const defaults = structuredClone(DEFAULT_SETTINGS);
-		this.settings = { ...defaults, ...data, reader: { ...defaults.reader, ...(data.reader ?? {}) } };
+		// Before v3 one `reader` object served every platform: it becomes both platforms' appearance.
+		const appearance = (p: AppearancePlatform) => ({ ...defaults.appearance[p], ...(data.appearance?.[p] ?? data.reader ?? {}) });
+		this.settings = { ...defaults, ...data, appearance: { desktop: appearance('desktop'), mobile: appearance('mobile') } };
+		delete (this.settings as { reader?: unknown }).reader;
 		// Formats saved before format ids existed.
 		for (const f of this.settings.copyFormats) f.id ||= newFormatId();
 		if ((data.settingsVersion ?? 1) < 2) {
 			// v2 added the comment callout format; offer it to existing setups once.
 			if (!this.settings.copyFormats.some((f) => needsComment(f.template)))
 				this.settings.copyFormats.splice(1, 0, { id: 'callout-comment', name: 'Callout with comment', template: COMMENT_TEMPLATE });
-			this.settings.settingsVersion = 2;
 		}
+		this.settings.settingsVersion = DEFAULT_SETTINGS.settingsVersion;
 		syncMenus(this.settings);
 	}
 
@@ -255,11 +258,62 @@ export default class EpubPlusPlus extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	/** Apply reader settings to every open EPUB view and persist them. */
-	async updateReaderSettings(patch: Partial<ReaderSettings>): Promise<void> {
-		this.settings.reader = { ...this.settings.reader, ...patch };
-		for (const v of this.epubViews()) v.reader?.updateSettings(this.settings.reader);
+	/** The appearance set this device uses. */
+	get platform(): AppearancePlatform {
+		return Platform.isMobile ? 'mobile' : 'desktop';
+	}
+
+	/** A book's own appearance settings (only those that differ from all books). */
+	bookAppearance(path: string, platform = this.platform): Partial<ReaderSettings> {
+		return this.settings.bookAppearance[path]?.[platform] ?? {};
+	}
+
+	/** Effective appearance: all books' settings for the platform, then the book's own. */
+	readerSettings(path?: string, platform = this.platform): ReaderSettings {
+		return { ...this.settings.appearance[platform], ...(path ? this.bookAppearance(path, platform) : {}) };
+	}
+
+	/**
+	 * Change appearance for all books (no `path`) or for one book, on a platform (default: this one).
+	 * Applies live to open views and persists.
+	 */
+	async updateReaderSettings(patch: Partial<ReaderSettings>, scope: { path?: string; platform?: AppearancePlatform } = {}): Promise<void> {
+		const platform = scope.platform ?? this.platform;
+		if (scope.path) {
+			const book = (this.settings.bookAppearance[scope.path] ??= {});
+			book[platform] = { ...book[platform], ...patch };
+		} else {
+			this.settings.appearance[platform] = { ...this.settings.appearance[platform], ...patch };
+		}
+		this.applyReaderSettings();
 		await this.saveSettings();
+	}
+
+	/**
+	 * Change appearance the way the book is set up: settings the book overrides change for the book,
+	 * the rest for all books (font size / theme commands).
+	 */
+	async updateReaderSettingsFor(path: string | undefined, patch: Partial<ReaderSettings>): Promise<void> {
+		const own = path ? this.bookAppearance(path) : {};
+		const entries = Object.entries(patch) as [keyof ReaderSettings, unknown][];
+		const book = Object.fromEntries(entries.filter(([k]) => k in own));
+		const all = Object.fromEntries(entries.filter(([k]) => !(k in own)));
+		if (path && Object.keys(book).length) await this.updateReaderSettings(book, { path });
+		if (Object.keys(all).length) await this.updateReaderSettings(all);
+	}
+
+	/** Drop a book's own appearance on a platform (or on all platforms). */
+	async resetBookAppearance(path: string, platform?: AppearancePlatform): Promise<void> {
+		const book = this.settings.bookAppearance[path];
+		if (!book) return;
+		if (platform) delete book[platform];
+		if (!platform || !Object.keys(book).length) delete this.settings.bookAppearance[path];
+		this.applyReaderSettings();
+		await this.saveSettings();
+	}
+
+	private applyReaderSettings(): void {
+		for (const v of this.epubViews()) v.reader?.updateSettings(this.readerSettings(v.file?.path));
 	}
 
 	/** Re-apply palette/opacity to views and callout CSS. */
@@ -287,7 +341,7 @@ export default class EpubPlusPlus extends Plugin {
 		this.calloutStyle.textContent = this.settings.palette
 			.map((p) => {
 				const rgb = toRgb(p.color);
-				return rgb ? `.callout[data-callout-metadata="${CSS.escape(p.name)}"] { --callout-color: ${rgb}; }` : '';
+				return rgb ? `.callout[data-callout-metadata="${CSS.escape(p.name)}"] { --callout-color: rgb(${rgb}); }` : '';
 			})
 			.join('\n');
 	}
@@ -314,11 +368,16 @@ export default class EpubPlusPlus extends Plugin {
 					this.index.removeSource(oldPath, true);
 					this.index.indexFile(file);
 				} else if (file.extension === 'epub') {
+					const look = this.settings.bookAppearance[oldPath];
+					if (look) {
+						delete this.settings.bookAppearance[oldPath];
+						this.settings.bookAppearance[file.path] = look;
+					}
 					const pos = this.settings.positions[oldPath];
 					if (pos) {
 						delete this.settings.positions[oldPath];
 						this.savePosition(file.path, pos);
-					}
+					} else if (look) this.saveSettings();
 					window.clearTimeout(rebuildTimer);
 					rebuildTimer = window.setTimeout(() => this.index.rebuild(), 1000);
 				}
@@ -655,15 +714,15 @@ export default class EpubPlusPlus extends Plugin {
 		this.addCommand({ id: 'search', name: 'Search in EPUB', checkCallback: withView((v) => v.openSearch()) });
 		this.addCommand({ id: 'annotation-file', name: 'Open or create annotation file', checkCallback: withView((v) => this.openAnnotationFile(v)) });
 		this.addCommand({ id: 'appearance', name: 'Reading appearance', checkCallback: withView((v) => v.toggleAppearance()) });
-		this.addCommand({ id: 'font-increase', name: 'Increase font size', checkCallback: withView(() => this.updateReaderSettings({ fontSize: Math.min(48, this.settings.reader.fontSize + 1) })) });
-		this.addCommand({ id: 'font-decrease', name: 'Decrease font size', checkCallback: withView(() => this.updateReaderSettings({ fontSize: Math.max(8, this.settings.reader.fontSize - 1) })) });
+		this.addCommand({ id: 'font-increase', name: 'Increase font size', checkCallback: withView((v) => this.updateReaderSettingsFor(v.file?.path, { fontSize: Math.min(48, this.readerSettings(v.file?.path).fontSize + 1) })) });
+		this.addCommand({ id: 'font-decrease', name: 'Decrease font size', checkCallback: withView((v) => this.updateReaderSettingsFor(v.file?.path, { fontSize: Math.max(8, this.readerSettings(v.file?.path).fontSize - 1) })) });
 		this.addCommand({
 			id: 'cycle-theme',
 			name: 'Cycle theme',
-			checkCallback: withView(() => {
+			checkCallback: withView((v) => {
 				const order = ['auto', 'light', 'sepia', 'dark', 'publisher'] as const;
-				const i = order.indexOf(this.settings.reader.theme);
-				this.updateReaderSettings({ theme: order[(i + 1) % order.length] });
+				const i = order.indexOf(this.readerSettings(v.file?.path).theme);
+				this.updateReaderSettingsFor(v.file?.path, { theme: order[(i + 1) % order.length] });
 			}),
 		});
 		const copyCommand = (id: string, name: string, target: () => CopyTarget | null) =>
