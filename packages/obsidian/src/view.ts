@@ -782,10 +782,13 @@ export class EpubView extends FileView {
 	addSelectionItems(menu: Menu, info: SelectionInfo, isParagraph = false): void {
 		const s = this.plugin.settings;
 		const section = 'epp-selection';
-		if (isParagraph) menu.addItem((i) => (i.setTitle('Paragraph') as any).setIsLabel?.(true).setSection?.(section));
-		// What the items below do for this book's annotation file.
+		const label = (title: string) => menu.addItem((i) => (i.setTitle(title) as any).setIsLabel?.(true).setSection?.(section));
+		// With an annotation file, the Copy | Insert | Both row says what the items below do; otherwise they copy.
 		const ann = this.file && this.plugin.annotations.find(this.file);
-		if (ann) this.addAnnotationModeRow(menu, ann, section);
+		if (ann) {
+			if (isParagraph) label('Paragraph');
+			this.addAnnotationModeRow(menu, ann, section);
+		} else label(isParagraph ? 'Copy paragraph' : 'Copy');
 		for (const entry of s.selectionMenu) {
 			if (!entry.show) continue;
 			if (entry.id === 'link') {
