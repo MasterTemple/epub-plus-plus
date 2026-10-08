@@ -28,6 +28,7 @@ Most of EPUB++ is [file-plus-plus](../file-plus-plus), a library shared with the
 - **Live highlights.** Rendered with the CSS Custom Highlight API, so the DOM is never mutated and CFIs stay valid. They update as notes change.
 - **Highlight actions.**
   - Click a highlight to open the source note at that line.
+  - New highlight links carry `&updated=<UTC time>` (e.g. `20261008T140312Z`), rewritten whenever the highlight's color or comment changes, so the link records when it was last touched (shown in the sidebar and on margin comments; can be turned off).
   - Right-click it for *Change color* (rewrites `&color=` in the note, plus a surrounding `> [!quote|color]` callout header), *Open*, *Copy link*, and *Delete highlight* (removes the link, with its callout and comment, from the note; asks first only when there's a comment, and Shift-click skips the question).
 - **Copy menu on any text.** Right-click a selection to get *Link Only*, *Text Only* and your copy formats (*As Callout*, *As Quote*, …), with the *Copy | Insert | Both* row on top when the book has an annotation file, or right-click without a selection to target the paragraph under the pointer (on a highlight, those items only copy).
   - A row of color swatches at the top of the menu picks the color the items use (the toolbar color). On a highlight, its own row recolors it.
@@ -40,7 +41,8 @@ Most of EPUB++ is [file-plus-plus](../file-plus-plus), a library shared with the
   - Text-fragment links are located in the book to compare them; this can be turned off. When the position is unclear, the annotation is appended to the end of the section.
   - *Copy*, *Insert* or *Both* is a global default, overridable per file via its `epub-annotation-mode` property or the row in the selection menu.
 - **Comments on highlights.** A comment is the text after the double-embedded quote in a highlight's callout, the layout *Callout with comment* produces.
-  - Hovering a highlight shows its comment; on mobile, tapping does.
+  - **In the margin**, Google Docs style: comments sit beside their passages and scroll with the book; the text moves left to make room. Hovering a card underlines its passage, clicking it lines it up with the passage (others make way), double-clicking edits it, right-clicking opens the highlight menu. Toggle it in settings, with the *Toggle comments in the margin* command (bind a hotkey), or from the tab's menu.
+  - When the pane is too narrow for the margin (phones), hovering a highlight shows its comment; on mobile, tapping does.
   - The highlight menu has *Add comment* / *Edit comment*. Adding one double-embeds the callout's existing lines as they are and appends the comment.
 - **Markdown copying.** Selections are converted from the book's HTML to Markdown (emphasis, including CSS-styled; lists; headings; line breaks) for copying and `{{text}}`. This can be turned off.
 - **Sidebar.** The in-view sidebar has three tabs:
