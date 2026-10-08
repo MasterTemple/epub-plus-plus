@@ -14,7 +14,7 @@ import {
 } from 'obsidian';
 import { HighlightIndex, resolveEpub, type HighlightEntry } from './highlight-index';
 import { formatLink, linkAt, renderTemplate, setCalloutColor, setLinkColor } from './link-utils';
-import { COMMENT_TEMPLATE, DEFAULT_SETTINGS, needsComment, newFormatId, syncMenus, type AppearancePlatform, type CopyAction, type CopyFormat, type EppSettings, type OpenTarget } from './settings';
+import { COMMENT_TEMPLATE, DEFAULT_SETTINGS, needsComment, newFormatId, syncMenus, type AppearancePlatform, type CopyAction, type Orientation, type CopyFormat, type EppSettings, type OpenTarget } from './settings';
 import { Annotations } from './annotations';
 import { askForComment, confirmDeleteHighlight } from './comment-modal';
 import { getComment, removeHighlight, setComment } from './comment-utils';
@@ -55,6 +55,7 @@ export default class EpubPlusPlus extends Plugin {
 		this.registerCommands();
 		this.updateCalloutStyles();
 		this.registerBacklinkHover();
+		this.watchOrientation();
 		this.updatePreviews();
 		this.api = this.createApi();
 		this.app.workspace.onLayoutReady(() => this.app.workspace.trigger(API_READY_EVENT, this.api));
@@ -252,38 +253,85 @@ export default class EpubPlusPlus extends Plugin {
 		}
 		this.settings.settingsVersion = DEFAULT_SETTINGS.settingsVersion;
 		syncMenus(this.settings);
+		this.registerDevice();
+	}
+
+	/** data.json changed on disk (e.g. synced from another device): reload so saving doesn't undo that. */
+	override async onExternalSettingsChange(): Promise<void> {
+		await this.loadSettings();
+		this.applyReaderSettings();
+		this.refreshPalette();
+		for (const v of this.epubViews()) v.onAppearanceChanged();
 	}
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
 	}
 
-	/** The appearance set this device uses. */
+	/** This device's id, kept in Obsidian's local storage (per vault and device; not synced). */
+	deviceId = '';
+
+	private registerDevice(): void {
+		const key = 'epub-plus-plus-device';
+		let id = this.app.loadLocalStorage(key) as string | null;
+		if (!id) {
+			id = newFormatId();
+			this.app.saveLocalStorage(key, id);
+		}
+		this.deviceId = id;
+		if (!this.settings.devices[id]) {
+			this.settings.devices[id] = { name: defaultDeviceName(), platform: this.platform };
+			void this.saveSettings();
+		}
+	}
+
+	/** Desktop or mobile: where this device's appearance started from. */
 	get platform(): AppearancePlatform {
 		return Platform.isMobile ? 'mobile' : 'desktop';
 	}
 
-	/** A book's own appearance settings (only those that differ from all books). */
-	bookAppearance(path: string, platform = this.platform): Partial<ReaderSettings> {
-		return this.settings.bookAppearance[path]?.[platform] ?? {};
+	/** The window's shape now. */
+	get orientation(): Orientation {
+		return window.innerHeight > window.innerWidth ? 'portrait' : 'landscape';
 	}
 
-	/** Effective appearance: all books' settings for the platform, then the book's own. */
-	readerSettings(path?: string, platform = this.platform): ReaderSettings {
-		return { ...this.settings.appearance[platform], ...(path ? this.bookAppearance(path, platform) : {}) };
+	/** Which appearance applies: a device (default: this one) in an orientation (default: the current one). */
+	appearanceKey(device = this.deviceId, orientation = this.orientation): string {
+		return `${device}:${orientation}`;
+	}
+
+	private platformOfKey(key: string): AppearancePlatform {
+		return this.settings.devices[key.split(':')[0]]?.platform ?? this.platform;
+	}
+
+	/** All books' appearance for a device and orientation; until changed there, the platform's. */
+	allBooksAppearance(key = this.appearanceKey()): ReaderSettings {
+		return this.settings.deviceAppearance[key] ?? this.settings.appearance[this.platformOfKey(key)];
+	}
+
+	/** A book's own appearance settings (only those that differ from all books). */
+	bookAppearance(path: string, key = this.appearanceKey()): Partial<ReaderSettings> {
+		const book = this.settings.bookAppearance[path];
+		// Book settings saved per platform (before devices) apply until changed on a device.
+		return book?.[key] ?? book?.[this.platformOfKey(key)] ?? {};
+	}
+
+	/** Effective appearance: all books' settings, then the book's own. */
+	readerSettings(path?: string, key = this.appearanceKey()): ReaderSettings {
+		return { ...this.allBooksAppearance(key), ...(path ? this.bookAppearance(path, key) : {}) };
 	}
 
 	/**
-	 * Change appearance for all books (no `path`) or for one book, on a platform (default: this one).
-	 * Applies live to open views and persists.
+	 * Change appearance for all books (no `path`) or for one book, for a device and orientation
+	 * (default: this device, now). Applies live to open views and persists.
 	 */
-	async updateReaderSettings(patch: Partial<ReaderSettings>, scope: { path?: string; platform?: AppearancePlatform } = {}): Promise<void> {
-		const platform = scope.platform ?? this.platform;
+	async updateReaderSettings(patch: Partial<ReaderSettings>, scope: { path?: string; key?: string } = {}): Promise<void> {
+		const key = scope.key ?? this.appearanceKey();
 		if (scope.path) {
-			const book = (this.settings.bookAppearance[scope.path] ??= {});
-			book[platform] = { ...book[platform], ...patch };
+			const own = this.bookAppearance(scope.path, key);
+			(this.settings.bookAppearance[scope.path] ??= {})[key] = { ...own, ...patch };
 		} else {
-			this.settings.appearance[platform] = { ...this.settings.appearance[platform], ...patch };
+			this.settings.deviceAppearance[key] = { ...this.allBooksAppearance(key), ...patch };
 		}
 		this.applyReaderSettings();
 		await this.saveSettings();
@@ -302,19 +350,47 @@ export default class EpubPlusPlus extends Plugin {
 		if (Object.keys(all).length) await this.updateReaderSettings(all);
 	}
 
-	/** Drop a book's own appearance on a platform (or on all platforms). */
-	async resetBookAppearance(path: string, platform?: AppearancePlatform): Promise<void> {
+	/** Drop a book's own appearance for a device and orientation (or everywhere). */
+	async resetBookAppearance(path: string, key?: string): Promise<void> {
 		const book = this.settings.bookAppearance[path];
 		if (!book) return;
-		if (platform) delete book[platform];
-		if (!platform || !Object.keys(book).length) delete this.settings.bookAppearance[path];
+		if (key) {
+			delete book[key];
+			// A legacy per-platform entry would apply again: mark this key as "no own settings".
+			if (book[this.platformOfKey(key)]) book[key] = {};
+		}
+		if (!key || !Object.values(book).some((b) => Object.keys(b).length)) delete this.settings.bookAppearance[path];
 		this.applyReaderSettings();
 		await this.saveSettings();
+	}
+
+	/** Forget another device and its appearance. */
+	async forgetDevice(id: string): Promise<void> {
+		if (id === this.deviceId) return;
+		delete this.settings.devices[id];
+		for (const k of Object.keys(this.settings.deviceAppearance)) if (k.startsWith(`${id}:`)) delete this.settings.deviceAppearance[k];
+		for (const book of Object.values(this.settings.bookAppearance)) for (const k of Object.keys(book)) if (k.startsWith(`${id}:`)) delete book[k];
+		await this.saveSettings();
+	}
+
+	private lastOrientation: Orientation | null = null;
+
+	/** Rotating the phone or reshaping the window switches between horizontal and vertical appearance. */
+	private watchOrientation(): void {
+		this.lastOrientation = this.orientation;
+		this.registerDomEvent(window, 'resize', () => {
+			const now = this.orientation;
+			if (now === this.lastOrientation) return;
+			this.lastOrientation = now;
+			this.applyReaderSettings();
+			for (const v of this.epubViews()) v.onAppearanceChanged();
+		});
 	}
 
 	private applyReaderSettings(): void {
 		for (const v of this.epubViews()) v.reader?.updateSettings(this.readerSettings(v.file?.path));
 	}
+
 
 	/** Re-apply palette/opacity to views and callout CSS. */
 	refreshPalette(): void {
@@ -667,7 +743,8 @@ export default class EpubPlusPlus extends Plugin {
 	 * Copy a selection. When the book has an annotation file, it may also (or instead) be inserted
 	 * there, depending on the file's mode.
 	 */
-	async copy(view: EpubView, info: SelectionInfo, what: CopyTarget, color: string | null): Promise<void> {
+	/** Copy (and/or insert into the annotation file, per its mode; `copyOnly` never inserts). */
+	async copy(view: EpubView, info: SelectionInfo, what: CopyTarget, color: string | null, copyOnly = false): Promise<void> {
 		let comment = '';
 		if (this.asksForComment(what)) {
 			const c = await askForComment(this.app, info.text);
@@ -675,7 +752,7 @@ export default class EpubPlusPlus extends Plugin {
 			comment = c;
 		}
 		const text = this.renderCopy(view, info, what, color, comment);
-		const ann = what !== 'text' && view.file ? this.annotations.find(view.file) : null;
+		const ann = what !== 'text' && !copyOnly && view.file ? this.annotations.find(view.file) : null;
 		const mode = ann ? this.annotations.mode(ann) : 'copy';
 		if (mode !== 'insert') await navigator.clipboard.writeText(text);
 		if (ann && mode !== 'copy') await this.addToAnnotationFile(view, ann, info, text, mode === 'both');
@@ -842,4 +919,15 @@ export type { HighlightEntry };
 function findLink(data: string, entry: HighlightEntry): number {
 	const { start, end } = entry.position;
 	return data.slice(start.offset, end.offset) === entry.original ? start.offset : data.indexOf(entry.original);
+}
+
+/** A name for this device in the settings ("iPhone", the computer's host name, …). */
+function defaultDeviceName(): string {
+	if (Platform.isIosApp) return Platform.isTablet ? 'iPad' : 'iPhone';
+	if (Platform.isAndroidApp) return Platform.isTablet ? 'Android tablet' : 'Android phone';
+	try {
+		return ((window as { require?: (m: string) => unknown }).require?.('os') as { hostname(): string }).hostname() || 'Desktop';
+	} catch {
+		return Platform.isMacOS ? 'Mac' : Platform.isWin ? 'Windows PC' : 'Desktop';
+	}
 }

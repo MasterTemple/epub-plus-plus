@@ -1,7 +1,7 @@
 import { PluginSettingTab, Setting, debounce, type App } from 'obsidian';
 import { buildAppearanceControls, globalAppearance } from './appearance';
 import type EpubPlusPlus from './main';
-import { HIGHLIGHT_GESTURE_LABELS, HIGHLIGHT_MENU_LABELS, SELECTION_MENU_LABELS, altLinkLabel, formatMenuLabel, type AppearancePlatform, type HighlightGestureAction, needsComment, newFormatId, syncMenus, type AnnotationMode, type CopyAction, type LinkStyle, type LinkType, type OpenTarget } from './settings';
+import { HIGHLIGHT_GESTURE_LABELS, HIGHLIGHT_MENU_LABELS, SELECTION_MENU_LABELS, altLinkLabel, formatMenuLabel, ORIENTATION_LABELS, type HighlightGestureAction, type Orientation, needsComment, newFormatId, syncMenus, type AnnotationMode, type CopyAction, type LinkStyle, type LinkType, type OpenTarget } from './settings';
 
 export class EppSettingTab extends PluginSettingTab {
 	constructor(
@@ -11,48 +11,82 @@ export class EppSettingTab extends PluginSettingTab {
 		super(app, plugin);
 	}
 
-	/** Which platform's appearance the Reading section edits (this device's by default). */
-	private appearancePlatform: AppearancePlatform | null = null;
+	/** Which device and orientation the Reading section edits (this device, now, by default). */
+	private appearanceDevice: string | null = null;
+	private appearanceOrientation: Orientation | null = null;
 
 	private appearanceSection(containerEl: HTMLElement): void {
 		const plugin = this.plugin;
-		const platform = (this.appearancePlatform ??= plugin.platform);
+		const devices = plugin.settings.devices;
+		if (!this.appearanceDevice || !devices[this.appearanceDevice]) this.appearanceDevice = plugin.deviceId;
+		const device = this.appearanceDevice;
+		const orientation = (this.appearanceOrientation ??= plugin.orientation);
+		const key = plugin.appearanceKey(device, orientation);
+		const deviceName = (id: string) => `${devices[id].name}${id === plugin.deviceId ? ' (this device)' : ''}`;
+
 		new Setting(containerEl)
 			.setName('Appearance for')
-			.setDesc('Desktop and mobile (phones and tablets) keep separate appearance settings.')
+			.setDesc('Each device keeps its own appearance, separately for a horizontal and a vertical window (or screen).')
+			.addDropdown((d) => {
+				for (const id of [plugin.deviceId, ...Object.keys(devices).filter((id) => id !== plugin.deviceId)]) d.addOption(id, deviceName(id));
+				d.setValue(device).onChange((v) => {
+					this.appearanceDevice = v;
+					this.display();
+				});
+			})
 			.addDropdown((d) =>
 				d
-					.addOptions({ desktop: 'Desktop', mobile: 'Mobile' })
-					.setValue(platform)
+					.addOptions(ORIENTATION_LABELS)
+					.setValue(orientation)
 					.onChange((v) => {
-						this.appearancePlatform = v as AppearancePlatform;
+						this.appearanceOrientation = v as Orientation;
 						this.display();
 					}),
 			);
-		buildAppearanceControls(containerEl.createDiv(), globalAppearance(plugin, platform));
+		const nameRow = new Setting(containerEl)
+			.setClass('epp-subsetting')
+			.setName('Device name')
+			.addText((t) =>
+				t.setValue(devices[device].name).onChange((v) => {
+					devices[device].name = v.trim() || devices[device].name;
+					void plugin.saveSettings();
+				}),
+			);
+		if (device !== plugin.deviceId)
+			nameRow.addExtraButton((b) =>
+				b
+					.setIcon('trash-2')
+					.setTooltip('Forget this device and its appearance')
+					.onClick(async () => {
+						await plugin.forgetDevice(device);
+						this.appearanceDevice = null;
+						this.display();
+					}),
+			);
+		buildAppearanceControls(containerEl.createDiv(), globalAppearance(plugin, key));
 
-		const books = Object.entries(plugin.settings.bookAppearance).filter(([, b]) => b[platform] && Object.keys(b[platform]!).length);
+		const books = Object.keys(plugin.settings.bookAppearance).filter((path) => Object.keys(plugin.bookAppearance(path, key)).length);
 		if (!books.length) return;
 		new Setting(containerEl)
 			.setName('Books with their own appearance')
-			.setDesc(`Set from a book's Appearance panel ("This book"). Their own settings win over the ones above on ${platform}.`);
-		for (const [path, b] of books) {
-			const keys = Object.keys(b[platform]!).join(', ');
+			.setDesc(`Set from a book's Appearance panel ("This book"). Their own settings win over the ones above.`);
+		for (const path of books) {
 			new Setting(containerEl)
 				.setClass('epp-subsetting')
 				.setName(path.split('/').pop()!.replace(/\.epub$/i, ''))
-				.setDesc(keys)
+				.setDesc(Object.keys(plugin.bookAppearance(path, key)).join(', '))
 				.addExtraButton((x) =>
 					x
 						.setIcon('rotate-ccw')
 						.setTooltip('Use the settings for all books')
 						.onClick(async () => {
-							await plugin.resetBookAppearance(path, platform);
+							await plugin.resetBookAppearance(path, key);
 							this.display();
 						}),
 				);
 		}
 	}
+
 
 	/** Reorderable, toggleable list of menu items. */
 	private menuEditor(container: HTMLElement, title: string, key: 'selectionMenu' | 'highlightMenu', label: (id: string) => string): void {

@@ -1,7 +1,7 @@
 import type { ReaderSettings, ThemeName, TextAlign, WidthUnit } from '@epub-pp/core';
 import { Platform, Setting, setIcon, type SliderComponent, type TextComponent } from 'obsidian';
 import type EpubPlusPlus from './main';
-import type { AppearancePlatform } from './settings';
+import { ORIENTATION_LABELS } from './settings';
 
 const FONT_PRESETS: Record<string, string> = {
 	'': 'Publisher',
@@ -20,15 +20,15 @@ export interface AppearanceTarget {
 	overridden?(key: keyof ReaderSettings): boolean;
 }
 
-/** All books' appearance on a platform (default: this device's). */
-export function globalAppearance(plugin: EpubPlusPlus, platform?: AppearancePlatform): AppearanceTarget {
+/** All books' appearance for a device and orientation (default: this device, now). */
+export function globalAppearance(plugin: EpubPlusPlus, key?: string): AppearanceTarget {
 	return {
-		settings: () => plugin.settings.appearance[platform ?? plugin.platform],
-		update: (patch) => plugin.updateReaderSettings(patch, { platform }),
+		settings: () => plugin.allBooksAppearance(key),
+		update: (patch) => plugin.updateReaderSettings(patch, { key }),
 	};
 }
 
-/** One book's appearance on this device's platform. */
+/** One book's appearance on this device, in the current orientation. */
 export function bookAppearance(plugin: EpubPlusPlus, path: string): AppearanceTarget {
 	return {
 		settings: () => plugin.readerSettings(path),
@@ -216,7 +216,7 @@ export class AppearancePanel {
 		setIcon(close, 'x');
 		close.addEventListener('click', () => this.toggle(false));
 
-		const platform = plugin.platform;
+		const where = `on this device, ${ORIENTATION_LABELS[plugin.orientation].toLowerCase()}`;
 		const scopeRow = this.el.createDiv('epp-appearance-scope');
 		const scopes = scopeRow.createDiv('epp-segmented');
 		const scopeButton = (label: string, book: boolean) => {
@@ -235,17 +235,22 @@ export class AppearancePanel {
 			setIcon(reset, 'rotate-ccw');
 			reset.toggle(hasOwn());
 			reset.addEventListener('click', async () => {
-				await plugin.resetBookAppearance(path!, plugin.platform);
+				await plugin.resetBookAppearance(path!, plugin.appearanceKey());
 				this.render();
 			});
 		}
 		this.el.createDiv({
 			cls: 'epp-appearance-note',
-			text: bookScope ? `Only this book, on ${platform}. Marked settings differ from all books.` : `All books, on ${platform}.`,
+			text: bookScope ? `Only this book, ${where}. Marked settings differ from all books.` : `All books, ${where}.`,
 		});
 
 		const target = bookScope ? bookAppearance(plugin, path!) : globalAppearance(plugin);
 		buildAppearanceControls(this.el.createDiv(), target, () => reset?.toggle(hasOwn()));
+	}
+
+	/** The device or orientation changed: show the settings that apply now. */
+	refresh(): void {
+		if (this.open) this.render();
 	}
 
 	private cleanup: (() => void) | null = null;

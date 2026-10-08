@@ -42,15 +42,26 @@ export const ANNOTATION_MODE_KEY = 'epub-annotation-mode';
 export type LinkStyle = 'auto' | 'wiki' | 'markdown';
 export type OpenTarget = 'split' | 'tab' | 'current';
 
-/** Appearance is stored separately for desktop and mobile (phones and tablets). */
+/** Desktop or mobile (phones and tablets): where a new device's appearance starts from. */
 export type AppearancePlatform = 'desktop' | 'mobile';
-export const APPEARANCE_PLATFORMS: AppearancePlatform[] = ['desktop', 'mobile'];
+/** The window's shape: horizontal (landscape) or vertical (portrait). */
+export type Orientation = 'landscape' | 'portrait';
+export const ORIENTATION_LABELS: Record<Orientation, string> = { landscape: 'Horizontal', portrait: 'Vertical' };
+
+export interface DeviceInfo {
+	name: string;
+	platform: AppearancePlatform;
+}
 
 export interface EppSettings {
-	/** Reader appearance for all books, per platform. */
+	/** Starting point of a device's appearance, per platform (and the appearance before devices existed). */
 	appearance: Record<AppearancePlatform, ReaderSettings>;
-	/** Per-book overrides (EPUB path → platform → only the changed settings). */
-	bookAppearance: Record<string, Partial<Record<AppearancePlatform, Partial<ReaderSettings>>>>;
+	/** Devices that have used EPUB++ (id → name); each device keeps its id in local storage. */
+	devices: Record<string, DeviceInfo>;
+	/** Appearance for all books per device and orientation: `${deviceId}:${orientation}` → settings. */
+	deviceAppearance: Record<string, ReaderSettings>;
+	/** Per-book overrides: EPUB path → `${deviceId}:${orientation}` (or a legacy platform name) → changed settings. */
+	bookAppearance: Record<string, Record<string, Partial<ReaderSettings>>>;
 	palette: PaletteColor[];
 	defaultColor: string;
 	/** Color picked last in a menu or the palette (null = no color); undefined until first pick. */
@@ -154,6 +165,8 @@ export const HIGHLIGHT_MENU_LABELS: Record<string, string> = {
 
 export const DEFAULT_SETTINGS: EppSettings = {
 	appearance: { desktop: { ...READER_DEFAULTS }, mobile: { ...READER_DEFAULTS } },
+	devices: {},
+	deviceAppearance: {},
 	bookAppearance: {},
 	palette: [
 		{ name: 'yellow', color: '#ffd000' },

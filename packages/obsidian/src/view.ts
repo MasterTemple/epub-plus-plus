@@ -3,6 +3,7 @@ import { FileView, Menu, Notice, Platform, Scope, TFile, setIcon, type MenuItem,
 import type { HighlightEntry } from './highlight-index';
 import { ANNOTATION_MODES, SELECTION_MENU_LABELS, altLinkLabel, formatMenuLabel, type AnnotationMode, type HighlightGestureAction } from './settings';
 import type EpubPlusPlus from './main';
+import type { CopyTarget } from './main';
 import { HOVER_SOURCE, VIEW_TYPE_EPUB, layerId } from './constants';
 import { AppearancePanel } from './appearance';
 import { Sidebar } from './sidebar';
@@ -324,7 +325,7 @@ export class EpubView extends FileView {
 			e.preventDefault();
 			this.annotationTip.hide();
 			const menu = new Menu();
-			if (info) this.addSelectionItems(menu, info, !selection);
+			if (info) this.addSelectionItems(menu, info, !selection, !selection && highlights.length > 0);
 			if (highlights.length) this.addHighlightItems(menu, highlights.map((h) => h.data as HighlightEntry));
 			if (annotations.length) this.addAnnotationItems(menu, annotations);
 			menu.showAtMouseEvent(e);
@@ -806,32 +807,37 @@ export class EpubView extends FileView {
 		m.showAtPosition(at);
 	}
 
-	/** Selection menu, in the order and with the items configured in settings. */
-	addSelectionItems(menu: Menu, info: SelectionInfo, isParagraph = false): void {
+	/**
+	 * Selection menu, in the order and with the items configured in settings. `copyOnly` (the paragraph
+	 * under a right-clicked highlight): just a "Copy" heading and items that only copy, no color row.
+	 */
+	addSelectionItems(menu: Menu, info: SelectionInfo, isParagraph = false, copyOnly = false): void {
 		const s = this.plugin.settings;
 		const section = 'epp-selection';
-		this.addActiveColorRow(menu, section);
 		const label = (title: string) => menu.addItem((i) => (i.setTitle(title) as any).setIsLabel?.(true).setSection?.(section));
 		// With an annotation file, the Copy | Insert | Both row says what the items below do; otherwise they copy.
-		const ann = this.file && this.plugin.annotations.find(this.file);
-		if (ann) {
+		const ann = !copyOnly && this.file && this.plugin.annotations.find(this.file);
+		if (!copyOnly) this.addActiveColorRow(menu, section);
+		if (copyOnly) label('Copy');
+		else if (ann) {
 			if (isParagraph) label('Paragraph');
 			this.addAnnotationModeRow(menu, ann, section);
 		} else label(isParagraph ? 'Copy paragraph' : 'Copy');
+		const copy = (what: CopyTarget, color: string | null) => this.plugin.copy(this, info, what, color, copyOnly);
 		for (const entry of s.selectionMenu) {
 			if (!entry.show) continue;
 			if (entry.id === 'link') {
-				menu.addItem((i) => i.setTitle(SELECTION_MENU_LABELS.link).setIcon('link').setSection(section).onClick(() => this.plugin.copy(this, info, 'link', this.activeColor)));
+				menu.addItem((i) => i.setTitle(SELECTION_MENU_LABELS.link).setIcon('link').setSection(section).onClick(() => copy('link', this.activeColor)));
 			} else if (entry.id === 'alt-link') {
 				menu.addItem((i) =>
 					i
 						.setTitle(altLinkLabel(s.linkType))
 						.setIcon('link-2')
 						.setSection(section)
-						.onClick(() => this.plugin.copy(this, info, 'alt-link', this.activeColor)),
+						.onClick(() => copy('alt-link', this.activeColor)),
 				);
 			} else if (entry.id === 'text') {
-				menu.addItem((i) => i.setTitle(SELECTION_MENU_LABELS.text).setIcon('copy').setSection(section).onClick(() => this.plugin.copy(this, info, 'text', null)));
+				menu.addItem((i) => i.setTitle(SELECTION_MENU_LABELS.text).setIcon('copy').setSection(section).onClick(() => copy('text', null)));
 			} else if (entry.id.startsWith('format:')) {
 				const fmt = s.copyFormats.find((f) => `format:${f.id}` === entry.id);
 				if (!fmt) continue;
@@ -841,7 +847,7 @@ export class EpubView extends FileView {
 						.setTitle(`${formatMenuLabel(fmt.name)}${this.plugin.asksForComment(fmt) ? '…' : ''}`)
 						.setIcon(icon)
 						.setSection(section)
-						.onClick(() => this.plugin.copy(this, info, fmt, this.activeColor)),
+						.onClick(() => copy(fmt, this.activeColor)),
 				);
 			}
 		}
@@ -1054,6 +1060,11 @@ export class EpubView extends FileView {
 		this.sidebar.showTab('search');
 		const q = this.reader?.getSelection()?.text;
 		this.sidebar.focusSearch(q && q.length < 100 ? q : undefined);
+	}
+
+	/** The orientation changed (see the plugin): the appearance panel shows the other set. */
+	onAppearanceChanged(): void {
+		this.appearance?.refresh();
 	}
 
 	toggleAppearance(): void {
