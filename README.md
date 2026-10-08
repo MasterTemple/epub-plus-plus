@@ -126,6 +126,7 @@ const book = await api.extractText(file, { blockSeparator: '\n\n' }); // { secti
 const cfi = book.cfi(section.spineIndex, start, end);                 // UTF-16 offsets in section.text
 const unregister = api.registerAnnotationProvider({
   id: 'my-plugin', name: 'Names', icon: 'user',
+  noun: 'names',                                                 // in sentences: "Filter names…"
   color: 'purple',                                               // palette name or CSS color
   style: (c) => `text-decoration: underline dotted 2px ${c};`,  // ::highlight() declarations
   annotations: (file) => [{ id: '1', locator: cfi, label: 'Ishmael' }],
