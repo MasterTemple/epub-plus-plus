@@ -436,8 +436,15 @@ export class EpubView extends FileView {
 		for (const g of groups) {
 			for (const a of g.annotations) {
 				const section = `epp-ann-${g.provider.id}-${a.id}`;
+				this.addActiveColorRow(menu, section);
 				if (many) menu.addItem((i) => (i.setTitle(`${g.provider.name}: ${a.label}`) as any).setIsLabel?.(true).setSection?.(section));
-				this.addColorItem(menu, 'Save as highlight', 'highlighter', section, (c) => this.plugin.saveAnnotation(this, g.layer, a, c, false));
+				menu.addItem((i) =>
+					i
+						.setTitle('Save as highlight')
+						.setIcon('highlighter')
+						.setSection(section)
+						.onClick(() => this.plugin.saveAnnotation(this, g.layer, a, this.activeColor, false)),
+				);
 				menu.addItem((i) =>
 					i
 						.setTitle('Save with comment…')
@@ -735,34 +742,55 @@ export class EpubView extends FileView {
 	}
 
 	/**
-	 * A menu item that runs `action(color)`. Tapping the item uses the previous color; the arrow at its
-	 * end (with a generous tap area) opens a color picker instead.
+	 * A row of palette swatches (and "No color") as a menu item: one line that scrolls sideways
+	 * instead of wrapping. `onPick` runs without closing the menu.
 	 */
-	private addColorItem(menu: Menu, title: string, icon: string, section: string, action: (color: string | null) => void, checked?: string | null): void {
+	private addColorRow(menu: Menu, section: string, current: () => string | null, onPick: (color: string | null) => void): void {
 		menu.addItem((item) => {
-			item.setTitle(title).setIcon(icon).setSection(section).onClick(() => action(this.activeColor));
+			item.setSection(section);
 			const dom = (item as MenuItem & { dom?: HTMLElement }).dom;
 			if (!dom) return;
-			const picker = dom.createDiv({ cls: 'epp-menu-color-picker', attr: { 'aria-label': 'Choose color' } });
-			const sw = picker.createSpan({ cls: 'epp-menu-swatch' });
-			sw.style.setProperty('--swatch', this.colorCss(this.activeColor));
-			if (!this.activeColor) sw.addClass('epp-swatch-none');
-			setIcon(picker.createSpan({ cls: 'epp-menu-chevron' }), 'chevron-right');
-			// Keep these events away from the menu item so it doesn't run its own action.
-			for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend'])
-				picker.addEventListener(type, (e) => e.stopPropagation());
-			picker.addEventListener('click', (e) => {
-				e.preventDefault();
-				e.stopPropagation();
-				const r = picker.getBoundingClientRect();
-				this.keepPendingSelection = true;
-				menu.hide();
-				this.openColorMenu({ x: r.right, y: r.top }, checked === undefined ? this.activeColor : checked, (c) => {
-					this.setActiveColor(c);
-					action(c);
+			dom.empty();
+			dom.addClass('epp-color-row');
+			dom.setAttr('aria-label', 'Color');
+			// A mouse wheel scrolls the row sideways when it overflows.
+			dom.addEventListener(
+				'wheel',
+				(e) => {
+					if (dom.scrollWidth <= dom.clientWidth || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+					dom.scrollLeft += e.deltaY;
+					e.preventDefault();
+				},
+				{ passive: false },
+			);
+			const swatches: [string | null, HTMLElement][] = [];
+			const refresh = () => swatches.forEach(([name, sw]) => sw.toggleClass('is-active', name === current()));
+			for (const name of [...this.plugin.settings.palette.map((p) => p.name), null]) {
+				const sw = dom.createDiv({ cls: 'epp-swatch', attr: { 'aria-label': name ?? 'No color' } });
+				sw.style.setProperty('--swatch', this.colorCss(name));
+				if (!name) sw.addClass('epp-swatch-none');
+				swatches.push([name, sw]);
+				// Keep these events away from the menu item (and the menu) so it stays open.
+				for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend']) sw.addEventListener(type, (e) => e.stopPropagation());
+				sw.addEventListener('click', (e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					onPick(name);
+					refresh();
 				});
-			});
+			}
+			refresh();
 		});
+	}
+
+	/** Menus that already have a row for the active color (selection and annotation items share one). */
+	private activeColorRows = new WeakSet<Menu>();
+
+	/** The color the selection / annotation items below use (the toolbar's active color). */
+	private addActiveColorRow(menu: Menu, section: string): void {
+		if (this.activeColorRows.has(menu)) return;
+		this.activeColorRows.add(menu);
+		this.addColorRow(menu, section, () => this.activeColor, (c) => this.setActiveColor(c));
 	}
 
 	private colorCss(name: string | null): string {
@@ -782,6 +810,7 @@ export class EpubView extends FileView {
 	addSelectionItems(menu: Menu, info: SelectionInfo, isParagraph = false): void {
 		const s = this.plugin.settings;
 		const section = 'epp-selection';
+		this.addActiveColorRow(menu, section);
 		const label = (title: string) => menu.addItem((i) => (i.setTitle(title) as any).setIsLabel?.(true).setSection?.(section));
 		// With an annotation file, the Copy | Insert | Both row says what the items below do; otherwise they copy.
 		const ann = this.file && this.plugin.annotations.find(this.file);
@@ -792,7 +821,7 @@ export class EpubView extends FileView {
 		for (const entry of s.selectionMenu) {
 			if (!entry.show) continue;
 			if (entry.id === 'link') {
-				this.addColorItem(menu, SELECTION_MENU_LABELS.link, 'link', section, (c) => this.plugin.copy(this, info, 'link', c));
+				menu.addItem((i) => i.setTitle(SELECTION_MENU_LABELS.link).setIcon('link').setSection(section).onClick(() => this.plugin.copy(this, info, 'link', this.activeColor)));
 			} else if (entry.id === 'alt-link') {
 				menu.addItem((i) =>
 					i
@@ -807,7 +836,13 @@ export class EpubView extends FileView {
 				const fmt = s.copyFormats.find((f) => `format:${f.id}` === entry.id);
 				if (!fmt) continue;
 				const icon = this.plugin.asksForComment(fmt) ? 'message-square-quote' : fmt.name.toLowerCase().includes('callout') ? 'quote' : 'clipboard-copy';
-				this.addColorItem(menu, `${formatMenuLabel(fmt.name)}${this.plugin.asksForComment(fmt) ? '…' : ''}`, icon, section, (c) => this.plugin.copy(this, info, fmt, c));
+				menu.addItem((i) =>
+					i
+						.setTitle(`${formatMenuLabel(fmt.name)}${this.plugin.asksForComment(fmt) ? '…' : ''}`)
+						.setIcon(icon)
+						.setSection(section)
+						.onClick(() => this.plugin.copy(this, info, fmt, this.activeColor)),
+				);
 			}
 		}
 	}
@@ -872,10 +907,15 @@ export class EpubView extends FileView {
 			const section = `epp-hl-${entry.id}`;
 			const note = entry.sourcePath.split('/').pop()?.replace(/\.md$/, '') ?? entry.sourcePath;
 			if (entries.length > 1) menu.addItem((i) => (i.setTitle(`Highlight in "${note}"`) as any).setIsLabel?.(true).setSection?.(section));
+			// Picking a color recolors the highlight right away.
+			if (order.includes('color'))
+				this.addColorRow(menu, section, () => entry.color ?? null, (c) => {
+					this.setActiveColor(c);
+					void this.plugin.setHighlightColor(entry, c);
+					menu.hide();
+				});
 			for (const id of order) {
 				if (id === 'open') menu.addItem((i) => i.setTitle(`Open in "${note}"`).setIcon('file-text').setSection(section).onClick(() => this.plugin.openSource(entry, this)));
-				else if (id === 'color')
-					this.addColorItem(menu, 'Change color', 'palette', section, (c) => this.plugin.setHighlightColor(entry, c), entry.color ?? null);
 				else if (id === 'comment')
 					menu.addItem((i) =>
 						i

@@ -453,36 +453,36 @@ body.epp-drawer-open .mobile-navbar {
 	}
 }
 
-/* ---------- Color arrow inside menu items (tap item = previous color, arrow = pick) ---------- */
-.menu-item .epp-menu-color-picker {
+/* ---------- Color row at the top of menus (one line; scrolls sideways when it doesn't fit) ---------- */
+.menu-item.epp-color-row {
 	display: flex;
-	align-items: center;
-	gap: 4px;
-	margin: -4px -6px -4px auto;
-	padding: 4px 6px 4px 12px;
-	border-radius: var(--radius-s);
-	color: var(--text-muted);
-	cursor: pointer;
+	flex-wrap: nowrap;
+	gap: 10px;
+	overflow-x: auto;
+	scrollbar-width: none;
+	/* Don't widen the menu: take its width from the other items and scroll. */
+	contain: inline-size;
+	padding: 6px 8px;
+	cursor: default;
 }
-.menu-item .epp-menu-color-picker:hover {
-	background: var(--background-modifier-hover);
-	color: var(--text-normal);
+.menu-item.epp-color-row::-webkit-scrollbar {
+	display: none;
 }
-.menu-item .epp-menu-color-picker .epp-menu-swatch {
-	margin: 0;
+.menu-item.epp-color-row:hover,
+.menu-item.epp-color-row.selected {
+	background: transparent;
 }
-.menu-item .epp-menu-chevron {
-	display: flex;
+.menu-item.epp-color-row .epp-swatch {
+	width: 18px;
+	height: 18px;
 }
-.menu-item .epp-menu-chevron svg {
-	width: 16px;
-	height: 16px;
+.is-mobile .menu-item.epp-color-row {
+	gap: 14px;
+	padding: 10px 12px;
 }
-.is-mobile .menu-item .epp-menu-color-picker {
-	margin: -10px -12px -10px auto;
-	padding: 10px 14px 10px 22px;
-	border-inline-start: var(--border-width) solid var(--background-modifier-border);
-	border-radius: 0;
+.is-mobile .menu-item.epp-color-row .epp-swatch {
+	width: 26px;
+	height: 26px;
 }
 
 /* ---------- Comment modal ---------- */
@@ -827,7 +827,7 @@ body.epp-appearance-open .mobile-navbar {
 /* ---------- Collapsible chapters in annotation provider tabs ---------- */
 .epp-provider-group {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	gap: 4px;
 	cursor: pointer;
 	user-select: none;
@@ -838,9 +838,7 @@ body.epp-appearance-open .mobile-navbar {
 }
 .epp-provider-group-title {
 	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	overflow-wrap: anywhere;
 }
 .epp-provider-group.is-collapsed .epp-hl-group-chevron {
 	transform: rotate(-90deg);

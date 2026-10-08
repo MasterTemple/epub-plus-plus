@@ -30,7 +30,7 @@ The repo has two packages:
   - Click a highlight to open the source note at that line.
   - Right-click it for *Change color* (rewrites `&color=` in the note, plus a surrounding `> [!quote|color]` callout header), *Open*, *Copy link*, and *Delete highlight* (removes the link, with its callout and comment, from the note; asks first only when there's a comment, and Shift-click skips the question).
 - **Copy menu on any text.** Right-click a selection to get *Link Only*, *Text Only* and your copy formats (*As Callout*, *As Quote*, …), with the *Copy | Insert | Both* row on top when the book has an annotation file, or right-click without a selection to target the paragraph under the pointer.
-  - Tapping a colored item uses your previous color; its arrow opens a color picker.
+  - A row of color swatches at the top of the menu picks the color the items use (the toolbar color). On a highlight, its own row recolors it.
   - Formats are templates (`{{text}}`, `{{link}}`, `{{color}}`, `{{chapter}}`, …), and multi-line values keep their `> ` prefix.
   - Formats with `{{comment}}` ask for a comment first. The default *Callout with comment* nests the quote and puts your comment below it.
   - Which items appear in the selection and highlight menus, and in what order, is configurable.
