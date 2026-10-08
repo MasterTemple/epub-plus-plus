@@ -45,6 +45,20 @@ Most of EPUB++ is [file-plus-plus](../file-plus-plus), a library shared with the
   - **In the margin**, Google Docs style: comments sit beside their passages and scroll with the book; the text moves left to make room. Hovering a card underlines its passage, clicking it lines it up with the passage (others make way), double-clicking edits it, right-clicking opens the highlight menu. Toggle it in settings, with the *Toggle comments in the margin* command (bind a hotkey), or from the tab's menu.
   - When the pane is too narrow for the margin (phones), hovering a highlight shows its comment; on mobile, tapping does.
   - The highlight menu has *Add comment* / *Edit comment*. Adding one double-embeds the callout's existing lines as they are and appends the comment.
+- **Import highlights from JSON.** *Import highlights from JSON…* (command), or *Import highlights into EPUB++…* in a `.json` file's menu. Paste the JSON or pick a file; each highlight goes into its book's annotation file (created if needed), merged in book order.
+  - Choose the format per kind, and turn kinds off: *No comment* (e.g. *Insert as Callout*) and *Comment* (e.g. *Insert as Callout with Comment*). The choices are remembered.
+  - Duplicates are skipped: a highlight already in your notes (or earlier in the file) with the same passage **and** the same comment. Passages are compared in the book, so a CFI and a text fragment for the same words match.
+  - Highlights whose book or passage can't be found are listed afterwards, not imported.
+
+  ```json
+  [
+    { "book": "Moby Dick.epub", "cfi": "epubcfi(/6/14!/4/2/4/6,/1:0,/1:76)", "comment": "The spleen line.", "color": "red", "updated": "2026-10-08T14:03:12Z" },
+    { "book": "Moby Dick", "textFragment": ":~:text=Call%20me%20Ishmael", "color": "yellow" },
+    { "book": "Books/Pride and Prejudice.epub", "text": "It is a truth universally acknowledged", "comment": "Famous opening." }
+  ]
+  ```
+
+  `book` (or `file` / `path` / `title`): a path, file name, or name without `.epub`; without one, the book open when importing. The passage: `cfi` (or `locator`), `textFragment`, or just `text`. Optional: `comment` (or `note`), `color` (palette name or CSS color), `updated` (ISO date or epoch; becomes the link's `&updated=`). The list may also be wrapped as `{ "highlights": [...] }`.
 - **Markdown copying.** Selections are converted from the book's HTML to Markdown (emphasis, including CSS-styled; lists; headings; line breaks) for copying and `{{text}}`. This can be turned off.
 - **Sidebar.** The in-view sidebar has three tabs:
   - **Contents:** the table of contents, tracking the current chapter.
