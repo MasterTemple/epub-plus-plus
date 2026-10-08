@@ -26,7 +26,7 @@ Most of EPUB++ is [file-plus-plus](../file-plus-plus), a library shared with the
   - Clicking a link switches to the EPUB's tab (even an unloaded background tab), or opens it next to the note. With *Reuse tabs and panes*, it opens as a tab in an existing other pane before splitting again.
   - The link opening is intercepted, PDF++-style, through a patch of `Workspace.openLinkText`.
 - **Live highlights.** Rendered with the CSS Custom Highlight API, so the DOM is never mutated and CFIs stay valid. They update as notes change.
-  - Hide them with the eye button in the sidebar's Highlights tab, the *Show / hide highlights* command, or the setting; the sidebar still lists them. Comments in the margin have their own toggle (the comment button next to it); with highlights hidden, hovering or selecting a comment shows its highlight.
+  - Hide them with the eye button in the sidebar's Highlights tab, the *Show / hide highlights* command, or the setting; the sidebar still lists them. Comments in the margin have their own toggle (the comment button next to it); with highlights hidden, hovering or selecting a comment shows its highlight. Hovering a highlight (or its comment) dims the others, with a short animation.
 - **Highlight actions.**
   - Click a highlight to open the source note at that line.
   - New highlight links carry `&updated=<UTC time>` (e.g. `20261008T140312Z`), rewritten whenever the highlight's color or comment changes, so the link records when it was last touched (shown in the sidebar and on margin comments; can be turned off).
