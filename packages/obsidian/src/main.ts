@@ -1,5 +1,7 @@
 import { BookText, EpubBook, type EpubReader } from '@epub-pp/core';
-import { FilePlusPlusPlugin } from 'file-plus-plus/obsidian';
+import { FilePlusPlusPlugin, type FppSettings } from 'file-plus-plus/obsidian';
+import { TFile } from 'obsidian';
+import { AppleBooksModal, type AppleBooksSettings } from './apple-books/modal';
 import type { EpubPlusPlusApi } from './api';
 import { epubFormat } from './format';
 
@@ -7,6 +9,36 @@ import { epubFormat } from './format';
 export default class EpubPlusPlus extends FilePlusPlusPlugin<EpubBook, EpubReader> {
 	readonly format = epubFormat;
 	declare api: EpubPlusPlusApi;
+	declare settings: FppSettings & AppleBooksSettings;
+
+	protected override async onLoaded(): Promise<void> {
+		this.addCommand({ id: 'import-apple-books', name: 'Import highlights from Apple Books…', callback: () => new AppleBooksModal(this.app, this).open() });
+		this.registerEvent(
+			this.app.workspace.on('file-menu', (menu, file) => {
+				if (!(file instanceof TFile) || file.extension.toLowerCase() !== 'sqlite') return;
+				menu.addItem((i) =>
+					i
+						.setTitle('Import Apple Books highlights into EPUB++…')
+						.setIcon('import')
+						.onClick(() => new AppleBooksModal(this.app, this, file).open()),
+				);
+			}),
+		);
+		// Books matched to Apple Books ids follow renames.
+		this.registerEvent(
+			this.app.vault.on('rename', (file, oldPath) => {
+				const books = this.settings.appleBooksBooks;
+				if (!books) return;
+				let changed = false;
+				for (const [id, path] of Object.entries(books))
+					if (path === oldPath) {
+						books[id] = file.path;
+						changed = true;
+					}
+				if (changed) void this.saveSettings();
+			}),
+		);
+	}
 
 	protected override createApi(): EpubPlusPlusApi {
 		return {

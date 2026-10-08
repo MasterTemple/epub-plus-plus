@@ -26,6 +26,7 @@ packages/obsidian/   the plugin (id `epub-plus-plus`, prefix `epp`)
   main.ts            EpubPlusPlus extends FilePlusPlusPlugin; extractText API; settings migration
   format.ts          the EPUB FileFormat (CFI positions, preview spine items, {{cfi}})
   api.ts             EpubPlusPlusApi = FileApi + extractText
+  apple-books/       sqlite.ts (read-only SQLite reader: table b-trees, overflow pages, WAL frames with checksums), apple-books.ts (ZAEANNOTATION → import JSON), modal.ts (database + asset id → EPUB matching, then file-plus-plus's ImportModal)
 demo/                Bun dev server + test page for the core reader in plain Chromium
 scripts/             install, fixtures, wrappers around file-plus-plus's headless Obsidian + CDP drivers
 test-vault/          dev vault; .obsidian/plugins/epub-plus-plus → ../../../packages/obsidian/dist (symlink)
@@ -63,4 +64,5 @@ bun scripts/cdp-input.ts --click x,y[,mods] | --tap x,y | --dbltap x,y | --hold 
 - **Shadow DOM:** `rem` units refer to Obsidian's root, so they're rewritten; `@font-face` is lifted to the document (`data-epp-fonts`).
 - **`BookText` CFIs must equal the reader's:** both walk the original document structure (rendering imports it unchanged).
 - **Prefix:** EPUB code uses its own `epp-` names (`epp-html`, `data-epp-spine`, `data-epp-css`) and `PREFIX` for library-owned ones (CSS variables, link attributes, the user layer). Unit tests see `fpp`, builds `epp`.
+- **Apple Books:** only `ZANNOTATIONTYPE = 2`, not deleted, are highlights; dates are Core Data seconds (+978307200); titles aren't in the annotation DB (they're in BKLibrary), hence the asset-id matching (`appleBooksBooks` in settings). Always read the `-wal`: recent highlights live only there. Plugin code uses `PREFIX` for library class names (`fpp-` is only rewritten in library sources).
 - **Settings:** EPUB++'s data.json predates the library: `openEpubIn` → `openIn` (`migrateSettings`), `linkType: 'cfi'` → `'primary'` (library v4).

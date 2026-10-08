@@ -847,3 +847,17 @@ body.epp-appearance-open .mobile-navbar {
 .epp-provider-group-items .epp-search-result {
 	padding-inline-start: calc(var(--size-4-1) + 14px + 4px);
 }
+
+/* ---------- Import from Apple Books ---------- */
+.epp-apple-book .setting-item-description {
+	max-width: 32em;
+}
+.epp-apple-sample {
+	margin-top: 2px;
+	font-style: italic;
+	color: var(--text-faint);
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}

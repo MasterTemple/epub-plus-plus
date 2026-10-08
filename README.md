@@ -59,6 +59,11 @@ Most of EPUB++ is [file-plus-plus](../file-plus-plus), a library shared with the
   ```
 
   `book` (or `file` / `path` / `title`): a path, file name, or name without `.epub`; without one, the book open when importing. The passage: `cfi` (or `locator`), `textFragment`, or just `text`. Optional: `comment` (or `note`), `color` (palette name or CSS color), `updated` (ISO date or epoch; becomes the link's `&updated=`). The list may also be wrapped as `{ "highlights": [...] }`.
+- **Import from Apple Books.** *Import highlights from Apple Books…* (command), or the menu of an `.sqlite` file in the vault. Copy Apple Books' annotation database (`AEAnnotation….sqlite` from `~/Library/Containers/com.apple.iBooksX/Data/Documents/AEAnnotation` on a Mac) into the vault **with its `-wal` file** (it holds the newest highlights).
+  - Apple Books knows books only by an id, so match each one to an EPUB in your vault once (the dialog shows its chapters and a few highlights to recognize it by); the matches are remembered, follow renames, and books can be skipped.
+  - Then the JSON import continues as above (formats per kind, duplicates skipped). Notes become comments, Apple's colors map to the palette (pink → red), and Apple's modification time becomes `&updated=`.
+  - When your EPUB is another edition than Apple's, highlights whose CFI doesn't land on the same words are found by their text instead.
+  - The database is read by a small built-in SQLite reader (no native modules), so this works on mobile too.
 - **Markdown copying.** Selections are converted from the book's HTML to Markdown (emphasis, including CSS-styled; lists; headings; line breaks) for copying and `{{text}}`. This can be turned off.
 - **Sidebar.** The in-view sidebar has three tabs:
   - **Contents:** the table of contents, tracking the current chapter.
