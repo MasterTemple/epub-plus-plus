@@ -1,5 +1,5 @@
 import { elementSteps, makeRangeCfi, pointToPath, serializeCfi, type CfiStep } from '../locators/cfi';
-import { BLOCK, SKIP } from '../search/text-index';
+import { BLOCK, SKIP } from 'file-plus-plus/core';
 import type { EpubBook, SpineItem } from './epub';
 import { children } from './xml';
 

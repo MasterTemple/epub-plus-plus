@@ -8,12 +8,12 @@ A [PDF++](https://github.com/ryotaushio/obsidian-pdf-plus)-style EPUB reader for
 [the Manhattoes](Moby%20Dick.epub#epubcfi%28/6/14!/4/2/6/2,/1%3A0,/1%3A48%29&color=green)
 ```
 
-The repo has two packages:
+Most of EPUB++ is [file-plus-plus](../file-plus-plus), a library shared with the other "++" plugins (e.g. Transcript++): the reader (highlights, annotation layers, search, text fragments, selection) and the whole Obsidian side (view, sidebar, menus, link interception, highlight index, annotation files, comments, previews, settings). This repo adds what is specific to EPUB:
 
 | Package | What it is |
 |---|---|
-| `packages/core` (`@epub-pp/core`) | A framework-agnostic EPUB engine: parsing, rendering, EPUB CFI, Text Fragments, highlights, search. No Obsidian imports, so it can drive other apps (see `demo/`). |
-| `packages/obsidian` | The Obsidian plugin (id `epub-plus-plus`). A thin layer over core: view, link interception, highlight index, menus, settings. |
+| `packages/core` (`@epub-pp/core`) | The EPUB engine: parsing, EPUB CFI, publisher CSS rewriting, `EpubReader` (a file-plus-plus `DocumentReader`), `BookText`. No Obsidian imports, so it can drive other apps (see `demo/`). |
+| `packages/obsidian` | The Obsidian plugin (id `epub-plus-plus`): the EPUB `FileFormat` (`format.ts`) and `extractText` in the API. |
 
 ## Features
 
@@ -83,20 +83,20 @@ await reader.render();
 reader.goTo('epubcfi(/6/14!/4/2/4/2,/1:0,/1:16)');     // or ':~:text=…', an href, or a TocItem
 reader.setHighlights([{ id: '1', locator: 'epubcfi(...)', color: 'yellow' }]);
 reader.updateSettings({ fontSize: 22, width: 65, widthUnit: 'ch' });
-const sel = reader.getSelection();                      // { cfi, text, textFragment(), tocItem, range }
+const sel = reader.getSelection();                      // { locator (a CFI), text, textFragment(), tocItem, range }
 const hits = reader.search('white whale', { wholeWord: true });
-reader.on('relocated', (loc) => save(loc.cfi));
+reader.on('relocated', (loc) => save(loc.locator));
 reader.on('highlight-click', (e, highlights) => …);
 reader.on('contextmenu', (e, { selection, highlights }) => …);
 ```
 
 `BookText.extract(book, { blockSeparator })` gives a book's text per spine item without rendering it, and `cfi(spineIndex, start, end)` turns offsets in that text into the same range CFIs the reader produces. `reader.setLayer(id, specs, { style, priority, hidden })` draws a layer of annotations (painted with static ranges, so thousands are cheap); the reader emits `annotation-click` and `annotation-hover` for them.
 
-The CFI (`parseCfi`, `serializeCfi`, `compareCfi`, `pointToPath`, `resolvePath`), Text Fragment and locator helpers are exported individually.
+The CFI helpers (`parseCfi`, `serializeCfi`, `compareCfi`, `pointToPath`, `resolvePath`) and EPUB locators (`parseEpubLocator`, `EPUB_SCHEMES`) are exported individually; text fragments and the generic reader come from `file-plus-plus/core`.
 
 ## Plugin API (for other Obsidian plugins)
 
-Once the workspace event `epub-plus-plus:api-ready` has fired (its argument is the API, also at `app.plugins.plugins['epub-plus-plus'].api`). The types are in `packages/obsidian/src/api.ts`.
+Once the workspace event `epub-plus-plus:api-ready` has fired (its argument is the API, also at `app.plugins.plugins['epub-plus-plus'].api`). The types are in `packages/obsidian/src/api.ts` (shared parts: `FileApi` in file-plus-plus).
 
 ```ts
 const api = app.plugins.plugins['epub-plus-plus']?.api;
@@ -118,7 +118,10 @@ api.refreshAnnotations('my-plugin', [file.path]);               // after they ch
 
 ## Development
 
+file-plus-plus is a sibling checkout, linked with bun (until it is published):
+
 ```sh
+(cd ../file-plus-plus && bun install && bun link)
 bun install
 bun run fixtures        # download sample EPUBs (fixtures/ and test-vault/Books/)
 bun test                # unit tests (CFI, CSS rewriting, link utils)

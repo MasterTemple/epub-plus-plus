@@ -1,14 +1,9 @@
+import type { TocItem } from 'file-plus-plus/core';
 import { resolvePath } from '../util/path';
 import { attrLocal, child, children, descendants, textOf } from './xml';
 
-export interface TocItem {
-	id: string;
-	label: string;
-	/** Zip-relative path with optional `#fragment`. Empty for unlinked headings. */
-	href: string;
-	children: TocItem[];
-	depth: number;
-}
+/** EPUB TOC items' `href`s are zip-relative paths with an optional `#fragment` (empty for unlinked headings). */
+export { flattenToc, type TocItem } from 'file-plus-plus/core';
 
 let counter = 0;
 const nextId = () => `toc-${++counter}`;
@@ -57,12 +52,4 @@ function parseNavPoints(parent: Element, base: string, depth: number): TocItem[]
 			depth,
 		};
 	});
-}
-
-export function flattenToc(items: TocItem[], out: TocItem[] = []): TocItem[] {
-	for (const it of items) {
-		out.push(it);
-		flattenToc(it.children, out);
-	}
-	return out;
 }

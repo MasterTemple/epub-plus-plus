@@ -2,6 +2,7 @@ import type { EpubBook, SpineItem } from '../book/epub';
 import { children } from '../book/xml';
 import type { CssProcessor } from '../css/rewrite';
 import { elementSteps, type CfiStep } from '../locators/cfi';
+import { PREFIX } from 'file-plus-plus/core';
 import { isExternal, resolvePath } from '../util/path';
 
 export interface SheetRef {
@@ -141,9 +142,10 @@ function processElement(el: Element, book: EpubBook, base: string, css: CssProce
 	if (name === 'a' || (name === 'area' && el.hasAttribute('href'))) {
 		const href = el.getAttribute('href') ?? el.getAttributeNS(XLINK, 'href');
 		if (href) {
-			if (isExternal(href)) el.setAttribute('data-epp-external', href);
+			// The reader handles clicks on these (internal links jump, external ones are reported).
+			if (isExternal(href)) el.setAttribute(`data-${PREFIX}-external`, href);
 			else {
-				el.setAttribute('data-epp-href', resolvePath(base, href));
+				el.setAttribute(`data-${PREFIX}-href`, resolvePath(base, href));
 				el.setAttribute('href', '#');
 			}
 		}

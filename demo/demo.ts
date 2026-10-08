@@ -16,17 +16,17 @@ async function load(name: string) {
 	await reader.render();
 	console.log(`rendered ${book.spine.length} items in ${(performance.now() - t0).toFixed(0)}ms`);
 	renderToc(book.toc);
-	reader.on('relocated', (loc) => ($('info').textContent = `${loc.tocItem?.label ?? ''} ${(loc.progress * 100).toFixed(1)}% ${loc.cfi}`));
+	reader.on('relocated', (loc) => ($('info').textContent = `${loc.tocItem?.label ?? ''} ${(loc.progress * 100).toFixed(1)}% ${loc.locator}`));
 	reader.on('highlight-click', (_e, hs) => alert(`clicked highlight ${hs.map((h) => h.locator).join('\n')}`));
 	reader.on('contextmenu', (e, { selection, highlights: hs }) => {
 		e.preventDefault();
-		console.log('contextmenu', selection?.cfi, selection?.textFragment(), selection?.text, hs);
-		$('info').textContent = selection ? `${selection.cfi} | ${selection.textFragment()}` : hs.map((h) => h.locator).join(' ');
+		console.log('contextmenu', selection?.locator, selection?.textFragment(), selection?.text, hs);
+		$('info').textContent = selection ? `${selection.locator} | ${selection.textFragment()}` : hs.map((h) => h.locator).join(' ');
 	});
 	reader.on('external-link', (_e, url) => window.open(url));
 	const saved = localStorage.getItem(`pos:${name}`);
 	if (saved) reader.goTo(saved);
-	reader.on('relocated', (loc) => localStorage.setItem(`pos:${name}`, loc.cfi));
+	reader.on('relocated', (loc) => localStorage.setItem(`pos:${name}`, loc.locator));
 	reader.setHighlights(highlights);
 }
 
@@ -62,7 +62,7 @@ for (const id of ['theme', 'size', 'lh', 'width', 'unit', 'font']) $(id).addEven
 $('hl').onclick = () => {
 	const sel = reader?.getSelection();
 	if (!sel) return;
-	highlights.push({ id: String(highlights.length), locator: sel.cfi, color: ['yellow', 'red', 'green', 'blue'][highlights.length % 4] });
+	highlights.push({ id: String(highlights.length), locator: sel.locator, color: ['yellow', 'red', 'green', 'blue'][highlights.length % 4] });
 	reader!.setHighlights(highlights);
 	reader!.clearSelection();
 };

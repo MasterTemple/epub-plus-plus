@@ -6,7 +6,8 @@
   "types": "src/index.ts",
   "dependencies": {
     "css-tree": "^3.2.1",
-    "fflate": "^0.8.3"
+    "fflate": "^0.8.3",
+    "file-plus-plus": "link:file-plus-plus"
   },
   "devDependencies": {
     "@types/css-tree": "^3.2.0"

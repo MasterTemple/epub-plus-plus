@@ -1,5 +1,21 @@
 import { describe, expect, test } from 'bun:test';
-import { cfiKey, findPlacement, headingLabel, insertAnnotation, insertAt } from '../src/annotation-utils';
+import { parseEpubLocator } from '@epub-pp/core';
+import { findPlacement, headingLabel, insertAnnotation, insertAt, linksIn, type Ordering } from 'file-plus-plus/notes';
+import { epubFormat } from '../src/format';
+
+// Annotation files order blocks by their first link's CFI (text fragments resolve through `resolve`).
+const ordering = (resolve: (tf: string) => unknown = () => null): Ordering<unknown> => ({
+	compare: epubFormat.position.compare,
+	keyOf: (md) => {
+		for (const link of linksIn(md)) {
+			const loc = parseEpubLocator(link.slice(link.indexOf('#') + 1));
+			if (loc.cfi) return epubFormat.position.key(loc.cfi);
+			if (loc.textFragment) return resolve(loc.textFragment);
+		}
+		return null;
+	},
+});
+const cfiKey = (cfi: string) => epubFormat.position.key(cfi);
 
 const file = `---
 epub: "[[Moby Dick.epub]]"
@@ -20,7 +36,7 @@ epub: "[[Moby Dick.epub]]"
 Some loose note without a link.
 `;
 
-const noTf = () => null;
+const noTf = ordering();
 const key = (cfi: string) => cfiKey(cfi)!;
 
 describe('annotation placement', () => {
@@ -63,7 +79,7 @@ describe('annotation placement', () => {
 			'[[Moby Dick.epub#:~:text=There%20now%20is&color=red|Moby-Dick]]',
 		);
 		const sel = key('epubcfi(/6/14!/4/2/4/8,/1:0,/1:20)');
-		const resolve = (tf: string) => (tf.includes('There') ? key('epubcfi(/6/14!/4/2/6/2/1:0)') : null);
+		const resolve = ordering((tf: string) => (tf.includes('There') ? key('epubcfi(/6/14!/4/2/6/2/1:0)') : null));
 		const { placement, data } = insertAnnotation(withTf, sel, '> NEW', resolve);
 		expect(placement.appended).toBe(false);
 		const lines = data.split('\n');

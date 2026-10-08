@@ -8,10 +8,10 @@
     "dev": "bun esbuild.config.ts"
   },
   "dependencies": {
-    "@epub-pp/core": "workspace:*"
+    "@epub-pp/core": "workspace:*",
+    "file-plus-plus": "link:file-plus-plus"
   },
   "devDependencies": {
-    "monkey-around": "^3.0.0",
     "obsidian": "^1.13.1"
   }
 }

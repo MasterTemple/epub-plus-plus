@@ -8,6 +8,7 @@
         "@happy-dom/global-registrator": "^20.14.5",
         "@types/bun": "^1.4.2",
         "esbuild": "^0.28.2",
+        "file-plus-plus": "link:file-plus-plus",
         "typescript": "^7.0.2",
       },
     },
@@ -17,6 +18,7 @@
       "dependencies": {
         "css-tree": "^3.2.1",
         "fflate": "^0.8.3",
+        "file-plus-plus": "link:file-plus-plus",
       },
       "devDependencies": {
         "@types/css-tree": "^3.2.0",
@@ -27,9 +29,9 @@
       "version": "0.1.0",
       "dependencies": {
         "@epub-pp/core": "workspace:*",
+        "file-plus-plus": "link:file-plus-plus",
       },
       "devDependencies": {
-        "monkey-around": "^3.0.0",
         "obsidian": "^1.13.1",
       },
     },
@@ -169,13 +171,13 @@
 
     "fflate": ["fflate@0.8.3", "", {}, "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA=="],
 
+    "file-plus-plus": ["file-plus-plus@link:file-plus-plus", {}],
+
     "happy-dom": ["happy-dom@20.14.5", "", { "dependencies": { "@types/node": ">=20.0.0", "@types/whatwg-mimetype": "^3.0.2", "@types/ws": "^8.18.1", "buffer-image-size": "^0.6.4", "entities": "^7.0.1", "whatwg-mimetype": "^3.0.0", "ws": "^8.21.0" } }, "sha512-x/RzkpWO40bTjIoT30iQtt64FLLmH/iRcUCN2X//bLx7H3ifkdfPXyqsro/OYtqzIAhiLMMA7mmiOR9C3NOKjQ=="],
 
     "mdn-data": ["mdn-data@2.27.1", "", {}, "sha512-9Yubnt3e8A0OKwxYSXyhLymGW4sCufcLG6VdiDdUGVkPhpqLxlvP5vl1983gQjJl3tqbrM731mjaZaP68AgosQ=="],
 
     "moment": ["moment@2.29.4", "", {}, "sha512-5LC9SOxjSc2HF6vO2CyuTDNivEdoz2IvyJJGj6X8DJ0eFyfszE0QiEd+iXmBvUP3WHxSjFH/vIsA0EN00cgr8w=="],
-
-    "monkey-around": ["monkey-around@3.0.0", "", {}, "sha512-jL6uY2lEAoaHxZep1cNRkCZjoIWY4g5VYCjriEWmcyHU7w8NU1+JH57xE251UVTohK0lCxMjv0ZV4ByDLIXEpw=="],
 
     "obsidian": ["obsidian@1.13.1", "", { "dependencies": { "@types/codemirror": "5.60.8", "moment": "2.29.4" }, "peerDependencies": { "@codemirror/state": "6.5.0", "@codemirror/view": "6.38.6" } }, "sha512-qtTEA2pmhJzhuhJqzbBFRYhpIOqvW+krDYjtFynv66KbxBbumHBlsJfWw3I4jtnK/6fZwbQhCrmmDdRwXmX56w=="],
 

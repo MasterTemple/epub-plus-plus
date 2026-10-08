@@ -3,7 +3,11 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "strict": true,
     "noImplicitOverride": true,
     "noUncheckedIndexedAccess": false,
@@ -11,6 +15,11 @@
     "isolatedModules": true,
     "esModuleInterop": true,
     "verbatimModuleSyntax": false,
-    "types": []
+    "types": [],
+    "paths": {
+      "obsidian": [
+        "./packages/obsidian/node_modules/obsidian"
+      ]
+    }
   }
 }

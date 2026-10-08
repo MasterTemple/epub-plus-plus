@@ -1,4 +1,5 @@
 import * as csstree from 'css-tree';
+import { PREFIX } from 'file-plus-plus/core';
 import { isExternal, resolvePath } from '../util/path';
 
 /**
@@ -6,7 +7,7 @@ import { isExternal, resolvePath } from '../util/path';
  *
  * - `html` / `:root` / `body` selectors target the wrapper elements standing in for them.
  * - Every rule is prefixed with `.epp-html` (optionally restricted to the chapters that link the sheet).
- * - Absolute font sizes and `rem` become multiples of `--epp-font-size`, so the user's font size scales
+ * - Absolute font sizes and `rem` become multiples of the reader's font size variable, so the user's font size scales
  *   the whole book while the publisher's relative proportions are preserved.
  * - `font-family`, `line-height`, `color`, `background-color` and `text-align` fall back through CSS
  *   variables, so reader settings can override them live without re-rendering.
@@ -15,14 +16,15 @@ import { isExternal, resolvePath } from '../util/path';
  * - `url()` references are resolved to blob URLs.
  */
 
+/** The reader's variables (set by file-plus-plus from the reading settings). */
 export const CSS_VARS = {
-	fontSize: '--epp-font-size',
-	fontFamily: '--epp-font-family',
-	lineHeight: '--epp-line-height',
-	textColor: '--epp-text-color',
-	linkColor: '--epp-link-color',
-	bgOverride: '--epp-bg-override',
-	textAlign: '--epp-text-align',
+	fontSize: `--${PREFIX}-font-size`,
+	fontFamily: `--${PREFIX}-font-family`,
+	lineHeight: `--${PREFIX}-line-height`,
+	textColor: `--${PREFIX}-text-color`,
+	linkColor: `--${PREFIX}-link-color`,
+	bgOverride: `--${PREFIX}-bg-override`,
+	textAlign: `--${PREFIX}-text-align`,
 } as const;
 
 const ABSOLUTE_UNITS: Record<string, number> = {
