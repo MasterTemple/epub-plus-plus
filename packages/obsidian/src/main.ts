@@ -1,4 +1,4 @@
-import { BookText, EpubBook, type EpubReader } from '@epub-pp/core';
+import { BookText, EpubBook, type CfiOptions, type EpubReader } from '@epub-pp/core';
 import { FilePlusPlusPlugin, type FppSettings } from 'file-plus-plus/obsidian';
 import { TFile } from 'obsidian';
 import { AppleBooksModal, type AppleBooksSettings } from './apple-books/modal';
@@ -52,8 +52,10 @@ export default class EpubPlusPlus extends FilePlusPlusPlugin<EpubBook, EpubReade
 						const path = t.href?.split('#')[0];
 						if (path && t.label && !titles.has(path)) titles.set(path, t.label);
 					}
-					const sections = text.sections.map((s) => ({ ...s, title: titles.get(s.href) ?? null }));
-					return { sections, cfi: (spine, start, end, o) => text.cfi(spine, start, end, o) };
+					const sections = text.sections.map((s) => ({ ...s, index: s.spineIndex, title: titles.get(s.href) ?? null }));
+					const cfi = (spine: number, start: number, end: number, o?: CfiOptions) => text.cfi(spine, start, end, o);
+					// `locator` is file-plus-plus's generic name for `cfi`
+					return { sections, cfi, locator: (spine, start, end) => cfi(spine, start, end) };
 				} finally {
 					book.destroy();
 				}

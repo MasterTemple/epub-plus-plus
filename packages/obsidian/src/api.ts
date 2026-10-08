@@ -1,5 +1,5 @@
 import type { CfiOptions, ExtractOptions, TextSection } from '@epub-pp/core';
-import type { Annotation, AnnotationProvider, FileApi } from 'file-plus-plus/obsidian';
+import type { Annotation, AnnotationProvider, ExtractedText, FileApi } from 'file-plus-plus/obsidian';
 import type { TFile } from 'obsidian';
 
 /**
@@ -19,9 +19,9 @@ export interface EpubPlusPlusApi extends FileApi {
 	extractText(file: TFile, opts?: ExtractOptions): Promise<ExtractedBook>;
 }
 
-export interface ExtractedBook {
-	/** `title`: the first table-of-contents entry pointing into the section. */
-	sections: (TextSection & { title: string | null })[];
+export interface ExtractedBook extends ExtractedText {
+	/** `title`: the first table-of-contents entry pointing into the section; `index` is `spineIndex`. */
+	sections: (TextSection & { index: number; title: string | null })[];
 	/** A range CFI for UTF-16 offsets `[start, end)` in a section's text. */
 	cfi(spineIndex: number, start: number, end: number, opts?: CfiOptions): string | null;
 }
