@@ -105,3 +105,36 @@ export function toImportJson(highlights: AppleHighlight[], books: Record<string,
 		}));
 	return JSON.stringify(items, null, 1);
 }
+
+/** Letters and digits only, lowercased (like file-plus-plus's `looseText`): compares text across editions and markup. */
+export function looseText(s: string): string {
+	return s
+		.normalize('NFKD')
+		.replace(/[­̀-ͯ]/g, '')
+		.toLowerCase()
+		.replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/** The text of an (X)HTML document, roughly: enough to look passages up (tags and entities dropped). */
+export function htmlText(html: string): string {
+	return html
+		.replace(/<(script|style|head)\b[\s\S]*?<\/\1\s*>/gi, ' ')
+		.replace(/<[^>]*>/g, '')
+		.replace(/&(?:#\d+|#x[\da-f]+|[a-z]+);/gi, ' ');
+}
+
+/**
+ * A few of a book's highlights to recognize it by in an EPUB's text: medium-length ones (long enough
+ * to be distinctive), trimmed to their middle so a different start or end in another edition matters less.
+ */
+export function assetProbes(asset: AppleAsset, count = 6): string[] {
+	const loose = asset.highlights.map((h) => looseText(h.text)).filter((t) => t.length >= 25);
+	loose.sort((a, b) => Math.abs(a.length - 90) - Math.abs(b.length - 90));
+	return [...new Set(loose.slice(0, count).map((t) => (t.length > 80 ? t.slice(10, 70) : t)))];
+}
+
+/** The share of `probes` found in `text` (already `looseText`). */
+export function matchScore(probes: string[], text: string): number {
+	if (!probes.length) return 0;
+	return probes.filter((p) => text.includes(p)).length / probes.length;
+}

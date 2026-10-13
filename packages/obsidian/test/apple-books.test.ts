@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { parseImport } from 'file-plus-plus/notes';
-import { appleHighlights, groupByAsset, toImportJson } from '../src/apple-books/apple-books';
+import { appleHighlights, assetProbes, groupByAsset, htmlText, looseText, matchScore, toImportJson } from '../src/apple-books/apple-books';
 
 const row = (o: Record<string, unknown>) => ({
 	ZANNOTATIONTYPE: 2,
@@ -48,4 +48,16 @@ test('grouping and conversion to the import JSON', () => {
 		['Library/Books/Union.epub', 'epubcfi(/6/16[x08]!/4/2/14/1,:0,:29)', 'Above all, I am thankful to God', 'n', 'yellow'],
 	]);
 	expect(entries[0].updated?.toISOString()).toBe('2026-05-13T20:21:02.500Z');
+});
+
+test('matching a book by its highlights in an EPUB\'s text', () => {
+	const texts = ['Watch and pray, lest you enter into temptation.', 'All believers, regardless of their station and season in life, need to be watchful.', 'Short'];
+	const [asset] = groupByAsset(appleHighlights(texts.map((t, i) => row({ ZANNOTATIONSELECTEDTEXT: t, ZANNOTATIONLOCATION: `epubcfi(/6/2!/4/${i * 2 + 2}/1,:0,:5)` })) as never));
+	const probes = assetProbes(asset!);
+	expect(probes).toHaveLength(2); // "Short" is too short to tell books apart
+	const html = '<html><head><title>x</title><style>p{}</style></head><body><p>“Watch and <em>pray</em>, lest you enter into temp&shy;tation.”</p><p>All believers, regardless of their station and season&#160;in life, need to be watch-ful.</p></body></html>';
+	expect(htmlText(html)).not.toContain('<');
+	expect(matchScore(probes, looseText(htmlText(html)))).toBe(1);
+	expect(matchScore(probes, looseText('Watch and pray, lest you enter into temptation.'))).toBe(0.5);
+	expect(matchScore([], 'anything')).toBe(0);
 });

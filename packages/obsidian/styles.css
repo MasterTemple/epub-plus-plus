@@ -1,11 +1,219 @@
 /* EPUB++'s own styles; file-plus-plus's come first in the built styles.css */
 
 /* ---------- Import from Apple Books ---------- */
-.epp-apple-book .setting-item-description {
-	max-width: 32em;
+.epp-apple-modal {
+	width: min(var(--dialog-max-width, 100vw), 44em);
+}
+/* The toolbar and the footer stay in view while the list scrolls (the modal is the scroller). */
+.epp-apple-toolbar,
+.epp-apple-footer {
+	position: sticky;
+	z-index: 1;
+	background: var(--modal-background, var(--background-primary));
+}
+.epp-apple-toolbar {
+	top: calc(-1 * var(--size-4-4));
+	padding-top: var(--size-4-2);
+	padding-bottom: var(--size-4-2);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+.epp-apple-footer {
+	bottom: calc(-1 * var(--size-4-4));
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+	align-items: center;
+	justify-content: flex-end;
+	padding: var(--size-4-3) 0 var(--size-4-4);
+	border-top: 1px solid var(--background-modifier-border);
+}
+.epp-apple-footer-info {
+	flex: 1;
+	min-width: 12em;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+.epp-apple-toolbar-row {
+	display: flex;
+	gap: var(--size-4-2);
+	align-items: center;
+}
+.epp-apple-search {
+	flex: 1;
+	min-width: 0;
+}
+.epp-apple-find,
+.epp-apple-include,
+.epp-apple-choose {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	white-space: nowrap;
+}
+.epp-apple-find svg,
+.epp-apple-include svg,
+.epp-apple-choose svg {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+.epp-apple-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-1);
+	margin-top: var(--size-4-2);
+	align-items: center;
+}
+.epp-apple-chip {
+	--chip: var(--text-muted);
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	height: auto;
+	padding: 2px var(--size-4-2) 2px var(--size-4-3);
+	border-radius: var(--radius-l);
+	font-size: var(--font-ui-small);
+	background: transparent;
+	box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+	color: var(--text-muted);
+}
+.epp-apple-chip.is-todo {
+	--chip: var(--color-orange);
+}
+.epp-apple-chip.is-matched {
+	--chip: var(--color-green);
+}
+.epp-apple-chip.is-active {
+	color: var(--text-normal);
+	box-shadow: inset 0 0 0 1.5px var(--chip);
+	background: color-mix(in srgb, var(--chip) 12%, transparent);
+}
+.epp-apple-chip-count {
+	min-width: 1.6em;
+	padding: 0 5px;
+	border-radius: var(--radius-l);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-on-accent);
+	background: var(--chip);
+}
+.epp-apple-skip-rest {
+	margin-inline-start: auto;
+	font-size: var(--font-ui-smaller);
+	box-shadow: none;
+	background: transparent;
+	color: var(--text-muted);
+	height: auto;
+	padding: 2px var(--size-4-2);
+}
+.epp-apple-skip-rest:hover {
+	color: var(--text-normal);
+}
+.epp-apple-progress {
+	color: var(--text-accent);
+	margin-bottom: 0;
+}
+.epp-apple-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	padding: var(--size-4-3) 0;
+}
+.epp-apple-empty {
+	padding: var(--size-4-6) 0;
+	text-align: center;
+	color: var(--text-faint);
+}
+.epp-apple-card {
+	--status: var(--color-orange);
+	display: flex;
+	gap: var(--size-4-3);
+	align-items: center;
+	padding: var(--size-4-3) var(--size-4-3) var(--size-4-3) var(--size-4-4);
+	border: 1px solid var(--background-modifier-border);
+	border-inline-start: 4px solid var(--status);
+	border-radius: var(--radius-m);
+	background: var(--background-primary-alt, var(--background-secondary));
+}
+.epp-apple-card.is-matched {
+	--status: var(--color-green);
+}
+.epp-apple-card.is-missing {
+	--status: var(--color-red);
+}
+.epp-apple-card.is-skipped {
+	--status: var(--background-modifier-border-hover);
+	opacity: 0.65;
+}
+.epp-apple-card-main {
+	flex: 1;
+	min-width: 0;
+}
+.epp-apple-card-head {
+	display: flex;
+	gap: var(--size-4-2);
+	align-items: center;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+.epp-apple-badge {
+	padding: 0 6px;
+	border-radius: var(--radius-s);
+	font-weight: var(--font-semibold);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	font-size: 0.85em;
+	color: var(--status);
+	background: color-mix(in srgb, var(--status) 15%, transparent);
+}
+.epp-apple-card.is-skipped .epp-apple-badge {
+	color: var(--text-muted);
+}
+.epp-apple-card-title {
+	margin-top: 2px;
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+	overflow-wrap: anywhere;
+}
+.epp-apple-card.is-unmatched .epp-apple-card-title {
+	font-weight: var(--font-normal);
+	color: var(--text-muted);
+}
+.epp-apple-chapters {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.epp-apple-card-actions {
+	display: flex;
+	gap: var(--size-4-1);
+	align-items: center;
+	flex: none;
+}
+@media (max-width: 480px) {
+	/* the screen is short: only the footer stays */
+	.epp-apple-toolbar {
+		position: static;
+	}
+	.epp-apple-footer-info {
+		flex-basis: 100%;
+		font-size: var(--font-ui-smaller);
+	}
+	.epp-apple-footer button {
+		flex: 1;
+	}
+	.epp-apple-card {
+		flex-direction: column;
+		align-items: stretch;
+	}
+	.epp-apple-card-actions {
+		justify-content: flex-end;
+	}
 }
 .epp-apple-sample {
-	margin-top: 2px;
+	margin-top: 4px;
+	font-size: var(--font-ui-small);
 	font-style: italic;
 	color: var(--text-faint);
 	display: -webkit-box;
