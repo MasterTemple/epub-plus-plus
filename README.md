@@ -65,6 +65,7 @@ Most of EPUB++ is [file-plus-plus](../file-plus-plus), a library shared with the
   - When your EPUB is another edition than Apple's, highlights whose CFI doesn't land on the same words are found by their text instead.
   - The results are a table per book: added, already there, of a kind turned off (amber), not found (red; tap to see which), and the books that weren't imported (skipped in amber, unmatched in red).
   - The database is read by a small built-in SQLite reader (no native modules), so this works on mobile too.
+- **Selecting by sentence.** A triple click selects the sentence under the pointer, a fourth click its paragraph.
 - **Markdown copying.** Selections are converted from the book's HTML to Markdown (emphasis, including CSS-styled; lists; headings; line breaks) for copying and `{{text}}`. This can be turned off.
 - **Sidebar.** The in-view sidebar has three tabs:
   - **Contents:** the table of contents, tracking the current chapter.
