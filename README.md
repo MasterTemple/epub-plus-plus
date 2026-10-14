@@ -34,6 +34,7 @@ Most of EPUB++ is [file-plus-plus](../file-plus-plus), a library shared with the
 - **Copy menu on any text.** Right-click a selection to get *Link Only*, *Text Only* and your copy formats (*As Callout*, *As Quote*, …), with the *Copy | Insert | Both* row on top when the book has an annotation file, or right-click without a selection to target the paragraph under the pointer (on a highlight, those items only copy).
   - A row of color swatches at the top of the menu picks the color the items use (the toolbar color). On a highlight, its own row recolors it.
   - Formats are templates (`{{text}}`, `{{link}}`, `{{color}}`, `{{chapter}}`, …), and multi-line values keep their `> ` prefix.
+  - `{{context}}` is the selection `==highlighted==` in its sentence; select a whole sentence (with or without its final punctuation and quotes) and it comes with the sentences before and after, from the neighboring paragraphs at a paragraph's edge. The default *Highlight in context* format uses it.
   - Formats with `{{comment}}` ask for a comment first. The default *Callout with comment* nests the quote and puts your comment below it.
   - Which items appear in the selection and highlight menus, and in what order, is configurable.
   - Ctrl/Cmd+C copies with a chosen action, and every copy style is a command you can bind to a hotkey.
