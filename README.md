@@ -51,6 +51,7 @@ Most of EPUB++ is [file-plus-plus](../file-plus-plus), a library shared with the
 - **Import highlights from JSON.** *Import highlights from JSON…* (command), or *Import highlights into EPUB++…* in a `.json` file's menu. Paste the JSON or pick a file; each highlight goes into its book's annotation file (created if needed), merged in book order.
   - Choose the format per kind, and turn kinds off: *No comment* (e.g. *Insert as Callout*) and *Comment* (e.g. *Insert as Callout with Comment*). The choices are remembered.
   - Duplicates are skipped: a highlight already in your notes (or earlier in the file) with the same passage **and** the same comment. Passages are compared in the book, so a CFI and a text fragment for the same words match.
+  - A highlight already in the book's annotation file at the same passage (CFI) is rewritten in the format chosen now (e.g. after switching a format to `{{context}}`, importing again redoes the old callouts), with the import's color, date and comment; its own comment is kept when the import has none. One already in that format is left alone.
   - Highlights whose book or passage can't be found are listed afterwards, not imported.
 
   ```json
@@ -64,9 +65,9 @@ Most of EPUB++ is [file-plus-plus](../file-plus-plus), a library shared with the
   `book` (or `file` / `path` / `title`): a path, file name, or name without `.epub`; without one, the book open when importing. The passage: `cfi` (or `locator`), `textFragment`, or just `text`. Optional: `comment` (or `note`), `color` (palette name or CSS color), `updated` (ISO date or epoch; becomes the link's `&updated=`). The list may also be wrapped as `{ "highlights": [...] }`.
 - **Import from Apple Books.** *Import highlights from Apple Books…* (command), or the menu of an `.sqlite` file in the vault. Copy Apple Books' annotation database (`AEAnnotation….sqlite` from `~/Library/Containers/com.apple.iBooksX/Data/Documents/AEAnnotation` on a Mac) into the vault **with its `-wal` file** (it holds the newest highlights).
   - Apple Books knows books only by an id, so match each one to an EPUB in your vault once (the dialog shows its chapters and a few highlights to recognize it by); the matches are remembered, follow renames, and books can be skipped. **Find matches** looks the unmatched books' highlights up in your vault's EPUBs and matches them for you; tabs (*To match*, *Matched*, *Skipped*) and a filter keep a long list manageable.
-  - Then the JSON import continues as above (formats per kind, duplicates skipped). Notes become comments, Apple's colors map to the palette (pink → red), and Apple's modification time becomes `&updated=`.
+  - Then the JSON import continues as above (formats per kind, duplicates skipped, highlights imported before rewritten in the current format). Notes become comments, Apple's colors map to the palette (pink → red), and Apple's modification time becomes `&updated=`.
   - When your EPUB is another edition than Apple's, highlights whose CFI doesn't land on the same words are found by their text instead.
-  - The results are a table per book: added, already there, of a kind turned off (amber), not found (red; tap to see which), and the books that weren't imported (skipped in amber, unmatched in red).
+  - The results are a table per book: added, rewritten in the current format, already there, of a kind turned off (amber), not found (red; tap to see which), and the books that weren't imported (skipped in amber, unmatched in red).
   - The database is read by a small built-in SQLite reader (no native modules), so this works on mobile too.
 - **Selecting by sentence.** A triple click selects the sentence under the pointer, a fourth click its paragraph.
 - **Markdown copying.** Selections are converted from the book's HTML to Markdown (emphasis, including CSS-styled; lists; headings; line breaks) for copying and `{{text}}`. This can be turned off.
