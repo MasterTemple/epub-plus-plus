@@ -37,7 +37,7 @@ Most of EPUB++ is [file-plus-plus](../file-plus-plus), a library shared with the
   - Formats with `{{comment}}` ask for a comment first. The default *Callout with comment* nests the quote and puts your comment below it.
   - Which items appear in the selection and highlight menus, and in what order, is configurable.
   - Ctrl/Cmd+C copies with a chosen action, and every copy style is a command you can bind to a hotkey.
-- **Annotation files.** A note per book with a heading per TOC entry; each heading links to its chapter with a point CFI, so it never draws a highlight. The note is tied to the book by its `epub` property.
+- **Annotation files.** A note per book with a heading per TOC entry; each heading links to its chapter with a point CFI, so it never draws a highlight. The note is tied to the book by its `epub` property. *Change annotation folder…* (command, or *Move…* next to the folder setting) moves existing annotation files to a new folder; when a book ends up with several, they are merged into one (annotations in book order, duplicates skipped, links to the merged files repointed).
   - While a book has one, copying from the selection menu can **insert** the annotation into the right chapter section, in book order. Placement uses a binary search over existing blocks by their CFI.
   - Text-fragment links are located in the book to compare them; this can be turned off. When the position is unclear, the annotation is appended to the end of the section.
   - *Copy*, *Insert* or *Both* is a global default, overridable per file via its `epub-annotation-mode` property or the row in the selection menu.
