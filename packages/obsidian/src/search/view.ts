@@ -300,10 +300,15 @@ export class BookSearchView extends ItemView {
 		toggle(this.controlsEl, 'ab', o.whole_word ? 'Whole words only (click: anywhere)' : 'Anywhere in words (click: whole words)', o.whole_word, () =>
 			this.setOptions({ whole_word: !o.whole_word }),
 		).addClass('is-word');
-		if (o.mode === 'plaintext')
-			toggle(this.controlsEl, '“”', o.fold_punctuation ? '\' " - also match curly quotes and dashes (click: exactly)' : 'Quotes and dashes match exactly (click: fold them)', o.fold_punctuation, () =>
-				this.setOptions({ fold_punctuation: !o.fold_punctuation }),
-			);
+		toggle(
+			this.controlsEl,
+			'“”',
+			o.fold_punctuation
+				? 'Curly quotes and dashes match \' " - (and the other way round). Click: match them exactly'
+				: 'Quotes and dashes match exactly. Click: let curly and straight ones match',
+			o.fold_punctuation,
+			() => this.setOptions({ fold_punctuation: !o.fold_punctuation }),
+		);
 		if (this.narrow) {
 			const b = iconButton(this.controlsEl, 'sliders-horizontal', this.displayOpen ? 'Hide display options' : 'Display options', () => {
 				this.displayOpen = !this.displayOpen;
@@ -882,7 +887,7 @@ export class BookSearchView extends ItemView {
 			t.createEl('strong', { text: title });
 			t.createDiv({ text: body });
 		};
-		tip('type', 'Text', 'Words as written. God’s finds God’s and God’s; a phrase stays in its paragraph.');
+		tip('type', 'Text', 'Words as written; a phrase stays in its paragraph. Soft hyphens and other invisible characters don’t get in the way, and God\'s finds God’s, first finds ﬁrst, sin finds ſin.');
 		tip('sparkles', 'Fuzzy', 'Typos and gaps: “justfication by fath” finds “justification by faith”.');
 		tip('regex', 'Regex', 'ripgrep’s syntax: \\bRom(ans)? \\d+:\\d+');
 		tip('mouse-pointer-click', 'Open', 'Click a match to open the book there (Ctrl/Cmd-click: a new tab); ↓ moves through matches, Enter opens.');
