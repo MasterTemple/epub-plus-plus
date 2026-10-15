@@ -93,6 +93,11 @@ Most of EPUB++ is [file-plus-plus](../file-plus-plus), a library shared with the
   - The appearance panel is a bottom sheet on phones.
   - Floating ▲/▼ buttons step through search results.
 - **Reading position** is saved per book as a CFI and restored exactly.
+- **Book search** (ribbon's library icon, *Search books*, *Search this book*, or *Search in this book* on an EPUB's menu): every EPUB in the vault searched at once with [fff-epub](https://github.com/MasterTemple/fff-epub), in a tab.
+  - *Text* (`'` `"` `-` also match curly quotes and dashes; a phrase stays in its paragraph), *Regex*, or *Fuzzy* (typos and gaps: "justfication by fath" finds "justification by faith"); smart case, whole words.
+  - Where: all books, folders, the book in front, or books you pick by title, author, or path; and a filter on titles, authors, and paths.
+  - Results grouped by book (or one list), books by path, most matches, or title; each match with its chapter, paragraph, ±1–3 paragraphs of context, whole paragraphs or the words around it, and its CFI. Click to open the book there (Ctrl/Cmd: a new tab); ↓/↑ and Enter from the search box; copy a link, a quote with its link, the paragraph, or the CFI.
+  - On desktop it runs the native `fff-epub serve` once for the session: books' text is cached (`~/.cache/fff-epub/text`), so a page of matches across 1,800 books takes about 150 ms. Install it from the fff-epub repository (`cargo install --path crates/fff-epub-cli`); EPUB++ looks in `~/.cargo/bin` and the usual places, or set its path from the engine button. On phones (or without it) fff-epub runs as WebAssembly in a worker, a book at a time with progress: the same matches and CFIs, slower across many books.
 
 ### Link format details
 

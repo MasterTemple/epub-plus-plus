@@ -29,6 +29,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@epub-pp/core": "workspace:*",
+        "fff-epub": "file:../../../../../rust/fff-epub/crates/fff-epub-ffi/dist/wasm/pkg",
         "file-plus-plus": "link:file-plus-plus",
       },
       "devDependencies": {
@@ -37,6 +38,8 @@
     },
   },
   "packages": {
+    "@boltffi/runtime": ["@boltffi/runtime@0.31.1", "", {}, "sha512-yo9jK8vSKrTW5/SU5J3zB3QuhCx3Z5m/jrX5CyCWIkVKHokv5hNgjz4urFj23aXHR46aItz2F5cOIs/m+TYKIg=="],
+
     "@codemirror/state": ["@codemirror/state@6.5.0", "", { "dependencies": { "@marijn/find-cluster-break": "^1.0.0" } }, "sha512-MwBHVK60IiIHDcoMet78lxt6iw5gJOGSbNbOIVBHWVXIH4/Nq1+GQgLLGgI1KlnN86WDXsPudVaqYHKBIx7Eyw=="],
 
     "@codemirror/view": ["@codemirror/view@6.38.6", "", { "dependencies": { "@codemirror/state": "^6.5.0", "crelt": "^1.0.6", "style-mod": "^4.1.0", "w3c-keyname": "^2.2.4" } }, "sha512-qiS0z1bKs5WOvHIAC0Cybmv4AJSkAXgX5aD6Mqd2epSLlVJsQl8NG23jCVouIgkh4All/mrbdsf2UOLFnJw0tw=="],
@@ -194,5 +197,7 @@
     "whatwg-mimetype": ["whatwg-mimetype@3.0.0", "", {}, "sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q=="],
 
     "ws": ["ws@8.22.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg=="],
+
+    "@epub-pp/obsidian/fff-epub": ["fff-epub@file:../../../rust/fff-epub/crates/fff-epub-ffi/dist/wasm/pkg", { "dependencies": { "@boltffi/runtime": "^0.31.0" } }],
   }
 }
