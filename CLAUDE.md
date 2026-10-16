@@ -26,7 +26,6 @@ packages/obsidian/   the plugin (id `epub-plus-plus`, prefix `epp`)
   main.ts            EpubPlusPlus extends FilePlusPlusPlugin; extractText API; settings migration
   format.ts          the EPUB FileFormat (CFI positions, preview spine items, {{cfi}})
   api.ts             EpubPlusPlusApi = FileApi + extractText
-  search/      book search: fff-epub (`~/Development/rust/fff-epub`) across the vault's EPUBs. `view.ts` (the tab, plain DOM: header, scope row, display row, results; its state is the workspace's), `manager.ts` (`BookSearch`: the engine for the plugin's lifetime; titles seen in `book-search-books.json` in the plugin folder), `native.ts` (desktop: one `fff-epub serve` child process, JSON lines, protocol in fff-epub's CLI README), `wasm.ts` + `worker.ts` (fff-epub's WebAssembly package in a worker, a book at a time, embedded by esbuild.config.ts), `types.ts` (pure: tested by `bun test`)
   apple-books/       sqlite.ts (read-only SQLite reader: table b-trees, overflow pages, WAL frames with checksums), apple-books.ts (ZAEANNOTATION → import JSON), modal.ts (database + asset id → EPUB matching, then file-plus-plus's ImportModal)
 demo/                Bun dev server + test page for the core reader in plain Chromium
 scripts/             install, fixtures, wrappers around file-plus-plus's headless Obsidian + CDP drivers
@@ -61,7 +60,7 @@ bun scripts/cdp-input.ts --click x,y[,mods] | --tap x,y | --dbltap x,y | --hold 
 
 ## Gotchas learned the hard way (EPUB-specific; the general ones are in file-plus-plus's CLAUDE.md)
 
-- **Book search:** fff-epub's WebAssembly package is `"fff-epub": "file:…/fff-epub-ffi/dist/wasm/pkg"`; rebuild it after changing fff-epub's bindings (`cd ~/Development/rust/fff-epub/crates/fff-epub-ffi && npm run pack:wasm`, then `bun install` here). Both engines must give the same matches (compare them in the headless instance after changing either). Class names are `epp-books-*`: file-plus-plus's in-book search owns `fpp-search-*`, which builds rename to `epp-search-*`. Don't name a view method `open` (it overrides `View.open`, and `onOpen` never runs). The native engine scans with `--no-ignore` (a vault's `.gitignore` mustn't hide books) and only on real desktops (mobile emulation has no Node modules).
+- **Book search** moved to its own plugins (`../fff-epub-obsidian`: fff-epub and fff-epub-wasm), which open matches through EPUB++'s API (`open`, `link`): keep those working.
 
 - **CFIs:** generated CFIs omit `[id]` assertions, because `[` `]` break wikilinks. Point CFIs (annotation-file headings) are positions, not highlights; highlights must be ranges.
 - **Shadow DOM:** `rem` units refer to Obsidian's root, so they're rewritten; `@font-face` is lifted to the document (`data-epp-fonts`).

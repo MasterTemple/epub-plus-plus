@@ -9,7 +9,6 @@
   },
   "dependencies": {
     "@epub-pp/core": "workspace:*",
-    "fff-epub": "file:../../../../../rust/fff-epub/crates/fff-epub-ffi/dist/wasm/pkg",
     "file-plus-plus": "link:file-plus-plus"
   },
   "devDependencies": {
