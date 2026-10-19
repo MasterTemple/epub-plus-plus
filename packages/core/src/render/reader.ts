@@ -67,11 +67,15 @@ export class EpubReader extends DocumentReader {
 		});
 
 		const prepared: PreparedSection[] = [];
+		const items = this.book.spine.filter((item) => !this.spineFilter || this.spineFilter.has(item.index));
+		// Inflated all at once, off the main thread where the browser can; parsed in order.
+		const texts = items.map((item) => this.book.textAsync(item.href).catch(() => undefined));
 		let last = performance.now();
-		for (const item of this.book.spine) {
-			if (this.spineFilter && !this.spineFilter.has(item.index)) continue;
+		for (const [i, item] of items.entries()) {
+			const text = await texts[i];
+			if (this.destroyed) return;
 			try {
-				prepared.push(prepareSection(this.book, item));
+				prepared.push(prepareSection(this.book, item, text));
 			} catch (e) {
 				console.error(`[epub-pp] failed to load ${item.href}`, e);
 			}

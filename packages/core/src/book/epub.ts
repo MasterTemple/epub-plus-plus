@@ -1,7 +1,7 @@
-import { unzipSync } from 'fflate';
 import { elementSteps, type CfiStep } from '../locators/cfi';
 import { resolvePath, splitFragment } from '../util/path';
 import { flattenToc, parseNav, parseNcx, type TocItem } from './toc';
+import { LazyZip } from './zip';
 import { child, children, decodeText, descendants, parseContentDocument, parseXml, textOf } from './xml';
 
 export interface ManifestItem {
@@ -65,18 +65,22 @@ export class EpubBook {
 	readonly opfPath: string;
 	readonly coverHref: string | null;
 
-	private readonly files: Record<string, Uint8Array>;
+	private readonly zip: LazyZip;
+	/** Decoded stylesheets (every chapter links the same few). */
+	private readonly texts = new Map<string, string>();
 	private readonly byHref = new Map<string, ManifestItem>();
 	private readonly spineByHref = new Map<string, SpineItem>();
 	private readonly blobUrls = new Map<string, string>();
+	private readonly pendingUrls = new Map<string, Promise<string | null>>();
+	private destroyed = false;
 
 	static async open(data: ArrayBuffer | Uint8Array): Promise<EpubBook> {
 		const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-		return new EpubBook(unzipSync(bytes));
+		return new EpubBook(new LazyZip(bytes));
 	}
 
-	private constructor(files: Record<string, Uint8Array>) {
-		this.files = files;
+	private constructor(zip: LazyZip) {
+		this.zip = zip;
 		const container = parseXml(this.text('META-INF/container.xml'));
 		const rootfile = descendants(container, 'rootfile')[0]?.getAttribute('full-path');
 		if (!rootfile) throw new Error('EPUB has no rootfile in META-INF/container.xml');
@@ -168,17 +172,22 @@ export class EpubBook {
 	// --- resource access -----------------------------------------------------
 
 	has(path: string): boolean {
-		return path in this.files;
+		return this.zip.has(path);
 	}
 
+	/** A resource's bytes (inflated on each call: keep what you need). */
 	bytes(path: string): Uint8Array {
-		const f = this.files[path] ?? this.files[decodeURI(path)];
+		const f = this.zip.read(path) ?? this.zip.read(safeDecodeURI(path));
 		if (!f) throw new Error(`EPUB resource not found: ${path}`);
 		return f;
 	}
 
 	text(path: string): string {
-		return decodeText(this.bytes(path));
+		const cached = this.texts.get(path);
+		if (cached !== undefined) return cached;
+		const text = decodeText(this.bytes(path));
+		if (this.mediaType(path) === 'text/css') this.texts.set(path, text);
+		return text;
 	}
 
 	mediaType(path: string): string {
@@ -195,9 +204,45 @@ export class EpubBook {
 		return url;
 	}
 
-	/** Parse a spine item's content document. */
-	loadDocument(item: SpineItem): Document {
-		return parseContentDocument(this.text(item.href), item.mediaType);
+	/**
+	 * Object URL for a resource, inflated off the main thread where the browser can (images: most of a
+	 * book's bytes). Resolves at once when it already exists; cached and revoked like `blobUrl`.
+	 */
+	blobUrlAsync(path: string): Promise<string | null> {
+		const url = this.blobUrls.get(path);
+		if (url) return Promise.resolve(url);
+		let pending = this.pendingUrls.get(path);
+		if (!pending) {
+			const real = this.zip.has(path) ? path : safeDecodeURI(path);
+			pending = this.zip.blob(real, this.mediaType(path)).then((blob) => {
+				this.pendingUrls.delete(path);
+				if (!blob || this.destroyed) return null;
+				const made = this.blobUrls.get(path) ?? URL.createObjectURL(blob);
+				this.blobUrls.set(path, made);
+				return made;
+			});
+			this.pendingUrls.set(path, pending);
+		}
+		return pending;
+	}
+
+	/** An object URL made already (by `blobUrl` or `blobUrlAsync`). */
+	cachedBlobUrl(path: string): string | undefined {
+		return this.blobUrls.get(path);
+	}
+
+	/** A resource's text, inflated off the main thread where the browser can (`text`'s async twin). */
+	async textAsync(path: string): Promise<string> {
+		const cached = this.texts.get(path);
+		if (cached !== undefined) return cached;
+		const bytes = (await this.zip.readAsync(path)) ?? (await this.zip.readAsync(safeDecodeURI(path)));
+		if (!bytes) throw new Error(`EPUB resource not found: ${path}`);
+		return decodeText(bytes);
+	}
+
+	/** Parse a spine item's content document (from its `text`, when already read). */
+	loadDocument(item: SpineItem, text = this.text(item.href)): Document {
+		return parseContentDocument(text, item.mediaType);
 	}
 
 	spineItemForHref(href: string): SpineItem | undefined {
@@ -222,7 +267,16 @@ export class EpubBook {
 	}
 
 	destroy(): void {
+		this.destroyed = true;
 		for (const url of this.blobUrls.values()) URL.revokeObjectURL(url);
 		this.blobUrls.clear();
+	}
+}
+
+function safeDecodeURI(path: string): string {
+	try {
+		return decodeURI(path);
+	} catch {
+		return path;
 	}
 }

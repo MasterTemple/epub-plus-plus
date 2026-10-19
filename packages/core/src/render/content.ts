@@ -20,8 +20,8 @@ export interface PreparedSection {
 }
 
 /** Parse a spine item and collect its stylesheets (first pass; no DOM output yet). */
-export function prepareSection(book: EpubBook, item: SpineItem): PreparedSection {
-	const doc = book.loadDocument(item);
+export function prepareSection(book: EpubBook, item: SpineItem, text?: string): PreparedSection {
+	const doc = book.loadDocument(item, text);
 	const html = doc.documentElement;
 	const body = children(html, 'body')[0] ?? html;
 	const bodyStep = body === html ? { index: 4 } : elementSteps(html, body)[0];
@@ -55,6 +55,8 @@ const URL_ATTRS: Record<string, string[]> = {
 };
 
 const XLINK = 'http://www.w3.org/1999/xlink';
+const OPS = 'http://www.idpf.org/2007/ops';
+const JS_URL = /^\s*javascript:/i;
 
 /**
  * Import a prepared section into the target document. The body's child nodes are imported unchanged
@@ -87,14 +89,14 @@ export function buildSection(
 	// Neutralize scripts before import so they can never run.
 	for (const s of Array.from(body.getElementsByTagNameNS('*', 'script'))) s.setAttribute('type', 'text/x-epp-disabled');
 
-	for (const n of Array.from(body.childNodes)) bodyEl.appendChild(target.importNode(n, true));
+	// Adopted, not cloned: the parsed document is thrown away.
+	for (const n of Array.from(body.childNodes)) bodyEl.appendChild(target.adoptNode(n));
 
-	let textLength = 0;
 	const walker = target.createTreeWalker(bodyEl, NodeFilter.SHOW_ELEMENT);
 	for (let n = walker.nextNode() as Element | null; n; n = walker.nextNode() as Element | null) {
 		processElement(n, book, item.href, css, item.index);
 	}
-	textLength = bodyEl.textContent?.length ?? 0;
+	const textLength = bodyEl.textContent?.length ?? 0;
 	// Rough height estimate (in lines of ~70 chars) so content-visibility placeholders keep the scrollbar sane.
 	const lines = Math.max(4, Math.ceil(textLength / 70));
 	wrapper.style.setProperty('contain-intrinsic-size', `auto ${Math.round(lines * 1.5)}em`);
@@ -116,10 +118,18 @@ function copyAttributes(from: Element, to: HTMLElement, css: CssProcessor, base:
 
 function processElement(el: Element, book: EpubBook, base: string, css: CssProcessor, spineIndex: number): void {
 	const name = el.localName;
-	for (const a of Array.from(el.attributes)) {
-		if (/^on/i.test(a.localName)) el.removeAttributeNode(a);
-		else if (/^\s*javascript:/i.test(a.value)) el.removeAttributeNode(a);
-		else if (a.localName === 'type' && a.namespaceURI === 'http://www.idpf.org/2007/ops') el.setAttribute('data-epub-type', a.value);
+	if (!el.hasAttributes()) {
+		if (name === 'style') el.textContent = css.rewriteInlineSheet(el.textContent ?? '', base, `[data-epp-spine="${spineIndex}"]`);
+		return;
+	}
+	const attrs = el.attributes;
+	for (let i = attrs.length - 1; i >= 0; i--) {
+		const a = attrs[i];
+		const local = a.localName;
+		if ((local.charCodeAt(0) | 32) === 111 && (local.charCodeAt(1) | 32) === 110) el.removeAttributeNode(a); // on…
+		else if (a.value.indexOf(':') !== -1 && JS_URL.test(a.value)) el.removeAttributeNode(a);
+		else if (a.namespaceURI === null) continue;
+		else if (local === 'type' && a.namespaceURI === OPS) el.setAttribute('data-epub-type', a.value);
 		else if (a.name === 'xml:lang') el.setAttribute('lang', a.value);
 	}
 	const style = el.getAttribute('style');
@@ -131,10 +141,16 @@ function processElement(el: Element, book: EpubBook, base: string, css: CssProce
 			const isX = attr.startsWith('xlink:');
 			const v = isX ? el.getAttributeNS(XLINK, 'href') : el.getAttribute(attr);
 			if (!v || isExternal(v) || v.startsWith('#')) continue;
-			const url = book.blobUrl(resolvePath(base, v).split('#')[0]);
-			if (!url) continue;
-			if (isX) el.setAttributeNS(XLINK, 'xlink:href', url);
-			else el.setAttribute(attr, url);
+			const path = resolvePath(base, v).split('#')[0];
+			const set = (url: string) => (isX ? el.setAttributeNS(XLINK, 'xlink:href', url) : el.setAttribute(attr, url));
+			const made = book.cachedBlobUrl(path);
+			if (made) set(made);
+			else {
+				// Images are most of a book's bytes: inflated off the main thread, set when ready (never fetched from the app's origin).
+				if (isX) el.removeAttributeNS(XLINK, 'href');
+				else el.removeAttribute(attr);
+				void book.blobUrlAsync(path).then((url) => url && set(url));
+			}
 		}
 		if (name === 'img') el.removeAttribute('srcset');
 	}

@@ -22,6 +22,12 @@ export function resolvePath(base: string, href: string): string {
 	if (isExternal(href)) return href;
 	const { path, fragment } = splitFragment(href);
 	if (path === '') return fragment === null ? base : `${base}#${fragment}`;
+	// Most links name a file in the same folder: no segments to walk, nothing to decode.
+	if (path.indexOf('/') === -1 && path.indexOf('%') === -1 && path !== '.' && path !== '..') {
+		const i = base.lastIndexOf('/');
+		const resolved = i === -1 ? path : `${base.slice(0, i)}/${path}`;
+		return fragment === null ? resolved : `${resolved}#${fragment}`;
+	}
 	let decoded = path;
 	try {
 		decoded = decodeURIComponent(path);

@@ -45,10 +45,12 @@ export class BookText {
 	/** Extract every spine item, yielding to the event loop between items now and then. */
 	static async extract(book: EpubBook, opts: ExtractOptions = {}): Promise<BookText> {
 		const out = new BookText(book);
+		const texts = book.spine.map((item) => book.textAsync(item.href).catch(() => undefined));
 		let last = performance.now();
-		for (const item of book.spine) {
+		for (const [i, item] of book.spine.entries()) {
+			const text = await texts[i];
 			try {
-				out.add(item, opts.blockSeparator ?? '\n\n');
+				out.add(item, opts.blockSeparator ?? '\n\n', text);
 			} catch (e) {
 				console.warn(`[epub-pp] could not extract ${item.href}`, e);
 			}
@@ -60,8 +62,8 @@ export class BookText {
 		return out;
 	}
 
-	private add(item: SpineItem, separator: string): void {
-		const doc = this.book.loadDocument(item);
+	private add(item: SpineItem, separator: string, source?: string): void {
+		const doc = this.book.loadDocument(item, source);
 		const html = doc.documentElement;
 		const body = children(html, 'body')[0] ?? html;
 		const bodyStep = body === html ? { index: 4 } : elementSteps(html, body)[0];

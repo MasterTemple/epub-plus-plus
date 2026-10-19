@@ -208,6 +208,16 @@ export class CssProcessor {
 
 	/** Rewrite a `style="..."` attribute. */
 	rewriteStyleAttribute(text: string, path: string): string {
+		// Books repeat the same few style attributes thousands of times.
+		const key = `${path}\n${text}`;
+		let out = this.styleCache.get(key);
+		if (out === undefined) this.styleCache.set(key, (out = this.rewriteStyle(text, path)));
+		return out;
+	}
+
+	private styleCache = new Map<string, string>();
+
+	private rewriteStyle(text: string, path: string): string {
 		try {
 			const ast = csstree.parse(text, { context: 'declarationList', parseValue: true, onParseError: () => {} });
 			this.resolveUrls(ast, path);
