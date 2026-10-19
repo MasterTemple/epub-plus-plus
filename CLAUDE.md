@@ -18,7 +18,7 @@ Most of the code is in the shared library **file-plus-plus** (`../file-plus-plus
 
 ```
 packages/core/       @epub-pp/core — EPUB engine (no Obsidian imports)
-  book/              EpubBook (fflate unzip, OPF, spine, TOC from nav/NCX), XML helpers, extract.ts (BookText)
+  book/              EpubBook (OPF, spine, TOC from nav/NCX, cover), zip.ts (LazyZip: central directory only, files inflated on demand), XML helpers, extract.ts (BookText)
   css/rewrite.ts     publisher CSS → shadow-root CSS (scoping, font scaling, var() fallbacks, @font-face lifting)
   locators/          cfi.ts (parse/serialize/compare, DOM↔CFI), locator.ts (cfi / text / href schemes)
   render/            reader.ts (EpubReader extends DocumentReader), content.ts (spine item → DOM), epub-css.ts
@@ -66,5 +66,6 @@ bun scripts/cdp-input.ts --click x,y[,mods] | --tap x,y | --dbltap x,y | --hold 
 - **Shadow DOM:** `rem` units refer to Obsidian's root, so they're rewritten; `@font-face` is lifted to the document (`data-epp-fonts`).
 - **`BookText` CFIs must equal the reader's:** both walk the original document structure (rendering imports it unchanged).
 - **Prefix:** EPUB code uses its own `epp-` names (`epp-html`, `data-epp-spine`, `data-epp-css`) and `PREFIX` for library-owned ones (CSS variables, link attributes, the user layer). Unit tests see `fpp`, builds `epp`.
+- **The zip is read lazily** (`LazyZip`): `book.bytes()` inflates on every call (no cache except stylesheet text); images get blob URLs through `blobUrlAsync` (DecompressionStream, off the main thread), so `<img src>` is set after rendering. Chapters over 64 KiB inflate the same way (`textAsync`); smaller ones are faster with fflate.
 - **Apple Books:** only `ZANNOTATIONTYPE = 2`, not deleted, are highlights; dates are Core Data seconds (+978307200); titles aren't in the annotation DB (they're in BKLibrary), hence the asset-id matching (`appleBooksBooks` in settings). Always read the `-wal`: recent highlights live only there. Plugin code uses `PREFIX` for library class names (`fpp-` is only rewritten in library sources).
 - **Settings:** EPUB++'s data.json predates the library: `openEpubIn` → `openIn` (`migrateSettings`), `linkType: 'cfi'` → `'primary'` (library v4).

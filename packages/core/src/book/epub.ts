@@ -137,7 +137,8 @@ export class EpubBook {
 			: undefined;
 		return {
 			title: textOf(dc('title')[0]) || 'Untitled',
-			creators: dc('creator').map((e) => textOf(e)).filter(Boolean),
+			// Some publishers put every author in one creator, separated by semicolons
+			creators: dc('creator').flatMap((e) => textOf(e).split(/\s*;\s*/)).filter(Boolean),
 			language: textOf(dc('language')[0]),
 			identifier: textOf(dc('identifier')[0]),
 			publisher: textOf(dc('publisher')[0]),
@@ -166,7 +167,11 @@ export class EpubBook {
 		if (byProp) return byProp.href;
 		const meta = descendants(pkg, 'meta').find((m) => m.getAttribute('name') === 'cover');
 		const id = meta?.getAttribute('content');
-		return (id && this.manifest.get(id)?.href) || null;
+		const byMeta = id && this.manifest.get(id);
+		if (byMeta && byMeta.mediaType.startsWith('image/')) return byMeta.href;
+		// EPUB 2 books without either: an image named like a cover
+		const named = [...this.manifest.values()].find((m) => m.mediaType.startsWith('image/') && /cover/i.test(m.id + ' ' + m.href) && !/back|bak/i.test(m.href));
+		return named?.href ?? null;
 	}
 
 	// --- resource access -----------------------------------------------------

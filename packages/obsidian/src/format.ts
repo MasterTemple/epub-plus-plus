@@ -22,6 +22,7 @@ export const epubFormat: FileFormat<EpubBook, EpubReader> = {
 	load: async (app, file) => EpubBook.open(await app.vault.readBinary(file)),
 	unload: (book) => book.destroy(),
 	info: (book) => ({ title: book.metadata.title, author: book.metadata.creators.join(', ') }),
+	cover: async (book) => (book.coverHref ? book.blobUrlAsync(book.coverHref) : null),
 	createReader: (host, book, opts, preview) => new EpubReader(host, book, { ...opts, spineItems: preview ? spineItemsFor(book, preview) : undefined }),
 	templateVars: (info) => ({ cfi: info.locator }),
 	extraTemplateVars: '{{book}}, {{cfi}}',
