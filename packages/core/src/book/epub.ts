@@ -219,13 +219,17 @@ export class EpubBook {
 		let pending = this.pendingUrls.get(path);
 		if (!pending) {
 			const real = this.zip.has(path) ? path : safeDecodeURI(path);
-			pending = this.zip.blob(real, this.mediaType(path)).then((blob) => {
-				this.pendingUrls.delete(path);
-				if (!blob || this.destroyed) return null;
-				const made = this.blobUrls.get(path) ?? URL.createObjectURL(blob);
-				this.blobUrls.set(path, made);
-				return made;
-			});
+			// Damaged data resolves to null (and isn't cached, so a later call tries again).
+			pending = this.zip
+				.blob(real, this.mediaType(path))
+				.catch((e) => (console.error(`EPUB++: ${path}`, e), null))
+				.then((blob) => {
+					this.pendingUrls.delete(path);
+					if (!blob || this.destroyed) return null;
+					const made = this.blobUrls.get(path) ?? URL.createObjectURL(blob);
+					this.blobUrls.set(path, made);
+					return made;
+				});
 			this.pendingUrls.set(path, pending);
 		}
 		return pending;

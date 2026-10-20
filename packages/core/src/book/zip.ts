@@ -103,7 +103,7 @@ export class LazyZip {
 			const nameLen = u16(d, p + 28);
 			const next = p + 46 + nameLen + u16(d, p + 30) + u16(d, p + 32);
 			if (method !== 0 && method !== 8) return false;
-			if (compressed === 0xffffffff || size === 0xffffffff) return false;
+			if (compressed === 0xffffffff || size === 0xffffffff || u32(d, p + 42) === 0xffffffff) return false;
 			const name = (flags & 0x800 ? utf8 : latin1).decode(d.subarray(p + 46, p + 46 + nameLen));
 			if (!name.endsWith('/')) this.entries.set(name, { method, header: u32(d, p + 42), compressed, size });
 			p = next;

@@ -128,9 +128,10 @@ function processElement(el: Element, book: EpubBook, base: string, css: CssProce
 		const local = a.localName;
 		if ((local.charCodeAt(0) | 32) === 111 && (local.charCodeAt(1) | 32) === 110) el.removeAttributeNode(a); // on…
 		else if (a.value.indexOf(':') !== -1 && JS_URL.test(a.value)) el.removeAttributeNode(a);
+		// Before the namespace test: the HTML parser (malformed or text/html chapters) gives xml:lang none.
+		else if (a.name === 'xml:lang') el.setAttribute('lang', a.value);
 		else if (a.namespaceURI === null) continue;
 		else if (local === 'type' && a.namespaceURI === OPS) el.setAttribute('data-epub-type', a.value);
-		else if (a.name === 'xml:lang') el.setAttribute('lang', a.value);
 	}
 	const style = el.getAttribute('style');
 	if (style) el.setAttribute('style', css.rewriteStyleAttribute(style, base));
@@ -142,7 +143,12 @@ function processElement(el: Element, book: EpubBook, base: string, css: CssProce
 			const v = isX ? el.getAttributeNS(XLINK, 'href') : el.getAttribute(attr);
 			if (!v || isExternal(v) || v.startsWith('#')) continue;
 			const path = resolvePath(base, v).split('#')[0];
-			const set = (url: string) => (isX ? el.setAttributeNS(XLINK, 'xlink:href', url) : el.setAttribute(attr, url));
+			const set = (url: string) => {
+				if (isX) el.setAttributeNS(XLINK, 'xlink:href', url);
+				else el.setAttribute(attr, url);
+				// A <source> added late is only noticed when its audio or video loads again.
+				if (name === 'source') (el.parentElement as HTMLMediaElement | null)?.load?.();
+			};
 			const made = book.cachedBlobUrl(path);
 			if (made) set(made);
 			else {
