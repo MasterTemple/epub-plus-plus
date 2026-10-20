@@ -16,14 +16,23 @@ function hasParserError(doc: Document): boolean {
 	return doc.getElementsByTagName('parsererror').length > 0;
 }
 
+/**
+ * The text is already decoded, so the XML declaration has nothing left to say. Dropping it also
+ * avoids happy-dom (tests, headless tools) rejecting single-quoted ones (`<?xml version='1.0'?>`,
+ * as calibre writes them) and declarations after a BOM or whitespace.
+ */
+function stripDeclaration(text: string): string {
+	return text.replace(/^﻿?\s*<\?xml\s[^>]*\?>/, '');
+}
+
 export function parseXml(text: string): Document {
-	return new DOMParser().parseFromString(text, 'application/xml');
+	return new DOMParser().parseFromString(stripDeclaration(text), 'application/xml');
 }
 
 /** Parse an (X)HTML content document. Falls back to the HTML parser for malformed XHTML. */
 export function parseContentDocument(text: string, mediaType: string): Document {
 	if (mediaType !== 'text/html') {
-		const doc = new DOMParser().parseFromString(text, 'application/xhtml+xml');
+		const doc = new DOMParser().parseFromString(stripDeclaration(text), 'application/xhtml+xml');
 		if (!hasParserError(doc)) return doc;
 		console.warn('[epub-pp] malformed XHTML, falling back to HTML parser');
 	}

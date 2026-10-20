@@ -13,8 +13,8 @@ const CHAPTER = `<?xml version="1.0" encoding="UTF-8"?>
 <p>Line<br/>break 😀 x</p>
 </body></html>`;
 
-function epub(): Uint8Array {
-	return zipSync({
+function epubFiles(): Record<string, Uint8Array> {
+	return {
 		mimetype: strToU8('application/epub+zip'),
 		'META-INF/container.xml': strToU8(
 			'<?xml version="1.0"?><container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
@@ -24,7 +24,11 @@ function epub(): Uint8Array {
 <manifest><item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/></manifest>
 <spine><itemref idref="ch1"/></spine></package>`),
 		'OEBPS/ch1.xhtml': strToU8(CHAPTER),
-	});
+	};
+}
+
+function epub(): Uint8Array {
+	return zipSync(epubFiles());
 }
 
 /** The text a CFI covers, resolved against a freshly parsed copy of the chapter. */
@@ -85,4 +89,19 @@ describe('BookText', async () => {
 		expect(text.cfi(0, 5, 5)).toBeNull();
 		expect(text.cfi(3, 0, 1)).toBeNull();
 	});
+});
+
+test('single-quoted XML declarations (calibre) parse as XML', async () => {
+	const single = (s: string) => s.replace(/^<\?xml version="1.0"( encoding="UTF-8")?\?>/, "<?xml version='1.0' encoding='utf-8'?>");
+	const files = Object.fromEntries(Object.entries(epubFiles()).map(([k, v]) => [k, k === 'mimetype' ? v : strToU8(single(new TextDecoder().decode(v)))]));
+	const book = await EpubBook.open(zipSync(files));
+	expect(book.spine.length).toBe(1);
+	expect(book.metadata.title).toBe('T');
+	const warn = console.warn;
+	let warned = false;
+	console.warn = () => (warned = true);
+	const text = await BookText.extract(book);
+	console.warn = warn;
+	expect(warned).toBe(false); // the chapter parsed as XHTML, not through the HTML fallback
+	expect(text.sections[0].text.startsWith('Chapter')).toBe(true);
 });
